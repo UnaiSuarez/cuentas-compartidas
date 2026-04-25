@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+/* ── Variables de tema ─────────────────────────────────────────────────────── */
+:root {
+  --color-primary: #2563eb;       /* Azul cobalto */
+  --color-secondary: #10b981;     /* Esmeralda */
+  --color-danger: #ef4444;        /* Rojo */
+  --color-warning: #f59e0b;       /* Ámbar */
+  --color-bg-dark: #0f172a;       /* Fondo oscuro */
+  --color-surface-dark: #1e293b;  /* Superficie oscura */
+  --color-border-dark: #334155;   /* Borde oscuro */
+}
+
+/* ── Reset y base ──────────────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* ── Scrollbar personalizada ───────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* ── Selección de texto ────────────────────────────────────────────────────── */
+::selection {
+  background: #2563eb33;
+  color: #93c5fd;
+}
+
+/* ── Animaciones de entrada ────────────────────────────────────────────────── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 8px #2563eb44; }
+  50%       { box-shadow: 0 0 20px #2563eb88; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-8px); }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.4s ease forwards;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* ── Utilidades de glassmorphism ───────────────────────────────────────────── */
+.glass {
+  background: rgba(30, 41, 59, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(51, 65, 85, 0.5);
+}
+
+.glass-light {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* ── Clases de texto monetario ─────────────────────────────────────────────── */
+.amount-positive { color: #10b981; }
+.amount-negative { color: #ef4444; }
+.amount-neutral  { color: #94a3b8; }
