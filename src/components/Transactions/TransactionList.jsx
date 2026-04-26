@@ -262,7 +262,10 @@ export default function TransactionList() {
                       <span className="text-xs text-slate-500">{tx.categoryLabel}</span>
                     )}
                     <span className="text-xs text-slate-700">•</span>
-                    <span className="text-xs text-slate-500">{getMemberName(tx.paidBy)}</span>
+                    {tx.paidBy === 'common' || tx.paymentMode === 'common'
+                      ? <span className="text-xs px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-400 font-medium">Fondo común</span>
+                      : <span className="text-xs text-slate-500">{getMemberName(tx.paidBy)}</span>
+                    }
                     <span className="text-xs text-slate-700">•</span>
                     <span className="text-xs text-slate-500">{formatDate(txDate)}</span>
                   </div>

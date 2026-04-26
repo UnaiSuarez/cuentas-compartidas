@@ -10,6 +10,7 @@ import { useSettlement }  from '../../hooks/useSettlement'
 import { formatCurrency, amountColor } from '../../utils/formatters'
 import AvatarScene        from './AvatarScene'
 import BalanceCard        from './BalanceCard'
+import BalanceExplainer   from './BalanceExplainer'
 
 export default function Dashboard() {
   const { userProfile, groupMembers, loading } = useApp()
@@ -136,6 +137,9 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* Explicación de saldos */}
+      <BalanceExplainer />
 
       {/* Pagos óptimos y confirmaciones pendientes */}
       <BalanceCard />
