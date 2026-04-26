@@ -1,28 +1,8 @@
-/**
- * Contexto global de la aplicación.
- *
- * Responsabilidades:
- * - Escucha el estado de autenticación de Firebase Auth
- * - Carga y mantiene en memoria los datos del grupo (usuarios, transacciones,
- *   mensajes, pagos, ajustes)
- * - Suscribe listeners de Firestore Realtime para sincronización instantánea
- * - Expone funciones de login, logout y preferencias de UI (darkMode)
- *
- * Estructura Firestore esperada:
- *   groups/{groupId}/
- *   groups/{groupId}/transactions/{txId}
- *   groups/{groupId}/messages/{msgId}
- *   groups/{groupId}/payments/{payId}
- *   users/{userId}
- */
-
 import {
   createContext, useContext, useState,
   useEffect, useCallback, useRef,
 } from 'react'
-import {
-  onAuthStateChanged, signOut,
-} from 'firebase/auth'
+import { onAuthStateChanged, signOut } from 'firebase/auth'
 import {
   doc, getDoc, collection,
   onSnapshot, query, orderBy,
@@ -30,48 +10,40 @@ import {
 } from 'firebase/firestore'
 import { auth, db } from '../config/firebase'
 
-// ─── Contexto ─────────────────────────────────────────────────────────────────
 const AppContext = createContext(null)
 
-/**
- * Hook para consumir el contexto desde cualquier componente.
- * Lanza error si se usa fuera del provider.
- */
 export function useApp() {
   const ctx = useContext(AppContext)
   if (!ctx) throw new Error('useApp debe usarse dentro de <AppProvider>')
   return ctx
 }
 
-// ─── Provider ─────────────────────────────────────────────────────────────────
 export function AppProvider({ children }) {
+  const [firebaseUser,  setFirebaseUser]  = useState(undefined)
+  const [userProfile,   setUserProfile]   = useState(null)
+  const [groupId,       setGroupId]       = useState(null)     // sala activa
+  const [userGroupIds,  setUserGroupIds]  = useState([])       // todas las salas del usuario
+  const [userRooms,     setUserRooms]     = useState([])       // info básica de cada sala
 
-  // ── Auth Firebase ──────────────────────────────────────────────────────────
-  const [firebaseUser, setFirebaseUser]   = useState(undefined) // undefined = cargando
-  const [userProfile,  setUserProfile]    = useState(null)      // doc de /users/{uid}
-  const [groupId,      setGroupId]        = useState(null)      // id del grupo del usuario
-
-  // ── Datos del grupo ────────────────────────────────────────────────────────
-  const [groupMembers, setGroupMembers]   = useState([])
-  const [transactions, setTransactions]  = useState([])
-  const [messages,     setMessages]      = useState([])
-  const [payments,     setPayments]      = useState([])         // pagos pendientes
-  const [categories,   setCategories]    = useState(defaultCategories())
+  const [groupInfo,     setGroupInfo]     = useState(null)     // { name, code, createdBy, memberIds }
+  const [groupMembers,  setGroupMembers]  = useState([])
+  const [transactions,  setTransactions]  = useState([])
+  const [messages,      setMessages]      = useState([])
+  const [payments,      setPayments]      = useState([])
+  const [categories,    setCategories]    = useState(defaultCategories())
   const [groupSettings, setGroupSettings] = useState(null)
 
-  // ── UI ────────────────────────────────────────────────────────────────────
   const [darkMode,  setDarkMode]  = useState(() => localStorage.getItem('theme') !== 'light')
   const [loading,   setLoading]   = useState(true)
   const [error,     setError]     = useState(null)
 
-  // Refs para cancelar listeners de Firestore al hacer logout
   const unsubTxRef      = useRef(null)
   const unsubMsgRef     = useRef(null)
   const unsubPayRef     = useRef(null)
   const unsubGroupRef   = useRef(null)
-  const unsubMembersRef = useRef(null)
 
-  // ── Sincronización de darkMode con el DOM ──────────────────────────────────
+  const isAdmin = userProfile?.id != null && groupInfo?.createdBy === userProfile.id
+
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode)
   }, [darkMode])
@@ -84,32 +56,40 @@ export function AppProvider({ children }) {
     })
   }
 
-  // ── Listener de autenticación Firebase ────────────────────────────────────
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
       setFirebaseUser(fbUser)
 
       if (!fbUser) {
-        // Usuario desautenticado: limpia todo
         cancelListeners()
         resetData()
         setLoading(false)
         return
       }
 
-      // Usuario autenticado: carga su perfil
       try {
         const profileDoc = await getDoc(doc(db, 'users', fbUser.uid))
         if (profileDoc.exists()) {
           const profile = { id: fbUser.uid, ...profileDoc.data() }
           setUserProfile(profile)
-          setGroupId(profile.groupId || null)
 
-          if (profile.groupId) {
-            subscribeToGroup(profile.groupId)
+          // Normaliza groupIds (backward compat con campo groupId legacy)
+          const gIds = profile.groupIds?.length
+            ? profile.groupIds
+            : profile.groupId ? [profile.groupId] : []
+          setUserGroupIds(gIds)
+
+          // Carga info básica de cada sala
+          const rooms = await loadUserRooms(gIds)
+          setUserRooms(rooms)
+
+          // Restaura la sala activa desde localStorage
+          const storedId = localStorage.getItem(`activeGroup_${fbUser.uid}`)
+          if (storedId && gIds.includes(storedId)) {
+            setGroupId(storedId)
+            subscribeToGroup(storedId)
           }
         } else {
-          // Perfil aún no creado (primer registro incompleto)
           setUserProfile(null)
         }
       } catch (e) {
@@ -122,24 +102,19 @@ export function AppProvider({ children }) {
     return unsub
   }, [])
 
-  // ── Suscripciones realtime al grupo ───────────────────────────────────────
-  /**
-   * Cancela todos los listeners activos de Firestore.
-   */
   function cancelListeners() {
     unsubTxRef.current?.()
     unsubMsgRef.current?.()
     unsubPayRef.current?.()
     unsubGroupRef.current?.()
-    unsubMembersRef.current?.()
   }
 
-  /**
-   * Limpia el estado de datos (al hacer logout).
-   */
   function resetData() {
     setUserProfile(null)
     setGroupId(null)
+    setUserGroupIds([])
+    setUserRooms([])
+    setGroupInfo(null)
     setGroupMembers([])
     setTransactions([])
     setMessages([])
@@ -147,59 +122,75 @@ export function AppProvider({ children }) {
     setGroupSettings(null)
   }
 
-  /**
-   * Suscribe a todos los listeners realtime del grupo.
-   * @param {string} gId - ID del grupo Firestore
-   */
+  function resetGroupData() {
+    setGroupInfo(null)
+    setGroupMembers([])
+    setTransactions([])
+    setMessages([])
+    setPayments([])
+    setGroupSettings(null)
+    setCategories(defaultCategories())
+  }
+
   const subscribeToGroup = useCallback((gId) => {
     cancelListeners()
 
-    // ── Datos del grupo + miembros ─────────────────────────────────────────
     unsubGroupRef.current = onSnapshot(doc(db, 'groups', gId), async (snap) => {
       if (!snap.exists()) return
-      const groupData = snap.data()
-      setGroupSettings(groupData.settings || null)
-      if (groupData.categories) setCategories(groupData.categories)
-
-      // Carga los perfiles de todos los miembros
-      const memberProfiles = await loadMemberProfiles(groupData.memberIds || [])
+      const data = snap.data()
+      setGroupSettings(data.settings || null)
+      if (data.categories) setCategories(data.categories)
+      setGroupInfo({
+        name:      data.name,
+        code:      data.code,
+        createdBy: data.createdBy,
+        memberIds: data.memberIds,
+      })
+      const memberProfiles = await loadMemberProfiles(data.memberIds || [])
       setGroupMembers(memberProfiles)
     })
 
-    // ── Transacciones ──────────────────────────────────────────────────────
-    const txRef = query(
-      collection(db, 'groups', gId, 'transactions'),
-      orderBy('date', 'desc')
+    unsubTxRef.current = onSnapshot(
+      query(collection(db, 'groups', gId, 'transactions'), orderBy('date', 'desc')),
+      (snap) => setTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     )
-    unsubTxRef.current = onSnapshot(txRef, (snap) => {
-      setTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-    })
 
-    // ── Mensajes (historial completo sin límite) ───────────────────────────
-    const msgRef = query(
-      collection(db, 'groups', gId, 'messages'),
-      orderBy('createdAt', 'desc')
+    unsubMsgRef.current = onSnapshot(
+      query(collection(db, 'groups', gId, 'messages'), orderBy('createdAt', 'desc')),
+      (snap) => setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     )
-    unsubMsgRef.current = onSnapshot(msgRef, (snap) => {
-      setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-    })
 
-    // ── Pagos pendientes ───────────────────────────────────────────────────
-    const payRef = query(
-      collection(db, 'groups', gId, 'payments'),
-      where('status', '==', 'pending'),
-      orderBy('createdAt', 'desc')
+    unsubPayRef.current = onSnapshot(
+      query(
+        collection(db, 'groups', gId, 'payments'),
+        where('status', '==', 'pending'),
+        orderBy('createdAt', 'desc')
+      ),
+      (snap) => setPayments(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     )
-    unsubPayRef.current = onSnapshot(payRef, (snap) => {
-      setPayments(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-    })
   }, [])
 
-  /**
-   * Carga los perfiles de usuario dado un array de UIDs.
-   * @param {string[]} uids
-   * @returns {Promise<Array>}
-   */
+  /** Cambia la sala activa */
+  function switchActiveGroup(newGroupId) {
+    cancelListeners()
+    resetGroupData()
+    setGroupId(newGroupId)
+    if (firebaseUser) {
+      localStorage.setItem(`activeGroup_${firebaseUser.uid}`, newGroupId)
+    }
+    subscribeToGroup(newGroupId)
+  }
+
+  /** Llimpia la sala activa (vuelve al selector) */
+  function clearActiveGroup() {
+    cancelListeners()
+    resetGroupData()
+    setGroupId(null)
+    if (firebaseUser) {
+      localStorage.removeItem(`activeGroup_${firebaseUser.uid}`)
+    }
+  }
+
   async function loadMemberProfiles(uids) {
     if (!uids.length) return []
     const profiles = await Promise.all(
@@ -211,10 +202,20 @@ export function AppProvider({ children }) {
     return profiles.filter(Boolean)
   }
 
-  /**
-   * Actualiza el perfil del usuario en Firestore y en el estado local.
-   * @param {Object} data - Campos a actualizar (nombre, avatar, etc.)
-   */
+  async function loadUserRooms(groupIds) {
+    if (!groupIds.length) return []
+    const snaps = await Promise.all(groupIds.map(id => getDoc(doc(db, 'groups', id))))
+    return snaps
+      .filter(s => s.exists())
+      .map(s => ({
+        id:          s.id,
+        name:        s.data().name,
+        code:        s.data().code,
+        memberCount: s.data().memberIds?.length || 0,
+        createdBy:   s.data().createdBy,
+      }))
+  }
+
   async function updateUserProfile(data) {
     if (!firebaseUser) return
     await updateDoc(doc(db, 'users', firebaseUser.uid), {
@@ -224,66 +225,84 @@ export function AppProvider({ children }) {
     setUserProfile(prev => ({ ...prev, ...data }))
   }
 
-  // ── Logout ────────────────────────────────────────────────────────────────
+  /** Actualiza las categorías del grupo activo */
+  async function updateGroupCategories(newCategories) {
+    if (!groupId) return
+    await updateDoc(doc(db, 'groups', groupId), {
+      categories: newCategories,
+      updatedAt:  serverTimestamp(),
+    })
+  }
+
+  /** Actualiza el nombre del grupo (solo admin) */
+  async function updateGroupName(newName) {
+    if (!groupId || !isAdmin) return
+    await updateDoc(doc(db, 'groups', groupId), {
+      name:      newName,
+      updatedAt: serverTimestamp(),
+    })
+    setGroupInfo(prev => ({ ...prev, name: newName }))
+  }
+
   async function logout() {
     cancelListeners()
     resetData()
     await signOut(auth)
   }
 
-  // ── Callback para cuando el perfil se completa tras el registro ───────────
   /**
-   * Se llama desde el flujo de registro una vez que el perfil ya existe en Firestore.
-   * @param {Object} profile - Perfil del usuario (con groupId incluido)
+   * Llamado desde useAuth tras crear/unirse a una sala.
+   * Acepta el groupId recién creado/unido como sala activa.
    */
-  async function onProfileCreated(profile) {
+  async function onProfileCreated(profile, newGroupId) {
     setUserProfile(profile)
-    setGroupId(profile.groupId)
-    if (profile.groupId) {
-      subscribeToGroup(profile.groupId)
+    const gIds = profile.groupIds?.length
+      ? profile.groupIds
+      : profile.groupId ? [profile.groupId] : []
+    setUserGroupIds(gIds)
+
+    const rooms = await loadUserRooms(gIds)
+    setUserRooms(rooms)
+
+    if (newGroupId) {
+      setGroupId(newGroupId)
+      if (profile.id) {
+        localStorage.setItem(`activeGroup_${profile.id}`, newGroupId)
+      }
+      subscribeToGroup(newGroupId)
     }
   }
 
-  // ── Valor del contexto ────────────────────────────────────────────────────
   const value = {
-    // Auth
-    firebaseUser,
-    userProfile,
-    groupId,
-    loading,
-    error, setError,
-    logout,
-    updateUserProfile,
+    firebaseUser, userProfile, groupId,
+    userGroupIds, userRooms,
+    groupInfo, groupMembers,
+    transactions, messages, payments,
+    categories, groupSettings,
+    isAdmin,
+    loading, error, setError,
+    logout, updateUserProfile,
+    updateGroupCategories, updateGroupName,
+    switchActiveGroup, clearActiveGroup,
     onProfileCreated,
-
-    // Datos
-    groupMembers,
-    transactions,
-    messages,
-    payments,
-    categories,
-    groupSettings,
-
-    // UI
     darkMode, toggleDarkMode,
   }
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>
 }
 
-// ─── Categorías por defecto ───────────────────────────────────────────────────
 function defaultCategories() {
   return [
-    { id: 'food',       label: 'Comida',        icon: '🍔',  suggestedAmount: 50  },
-    { id: 'transport',  label: 'Transporte',     icon: '🚗',  suggestedAmount: 30  },
-    { id: 'home',       label: 'Casa / Hogar',   icon: '🏠',  suggestedAmount: 200 },
-    { id: 'leisure',    label: 'Ocio',           icon: '🎮',  suggestedAmount: 40  },
-    { id: 'health',     label: 'Salud',          icon: '💊',  suggestedAmount: 25  },
-    { id: 'shopping',   label: 'Compras',        icon: '🛍️', suggestedAmount: 60  },
-    { id: 'bills',      label: 'Facturas',       icon: '📄',  suggestedAmount: 80  },
-    { id: 'travel',     label: 'Viajes',         icon: '✈️',  suggestedAmount: 150 },
-    { id: 'education',  label: 'Educación',      icon: '📚',  suggestedAmount: 50  },
-    { id: 'income',     label: 'Ingreso',        icon: '💰',  suggestedAmount: 0   },
-    { id: 'other',      label: 'Otros',          icon: '📦',  suggestedAmount: 20  },
+    { id: 'food',      label: 'Comida',      icon: '🍔', suggestedAmount: 50  },
+    { id: 'transport', label: 'Transporte',   icon: '🚗', suggestedAmount: 30  },
+    { id: 'home',      label: 'Casa / Hogar', icon: '🏠', suggestedAmount: 200 },
+    { id: 'leisure',   label: 'Ocio',         icon: '🎮', suggestedAmount: 40  },
+    { id: 'health',    label: 'Salud',        icon: '💊', suggestedAmount: 25  },
+    { id: 'shopping',  label: 'Compras',      icon: '🛍️',suggestedAmount: 60  },
+    { id: 'bills',     label: 'Facturas',     icon: '📄', suggestedAmount: 80  },
+    { id: 'travel',    label: 'Viajes',       icon: '✈️', suggestedAmount: 150 },
+    { id: 'education', label: 'Educación',    icon: '📚', suggestedAmount: 50  },
+    { id: 'income',    label: 'Ingreso',      icon: '💰', suggestedAmount: 0   },
+    { id: 'other',     label: 'Otros',        icon: '📦', suggestedAmount: 20  },
   ]
 }
