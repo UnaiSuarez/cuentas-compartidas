@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git rm *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git commit -m 'docs: crear Manual de Usuario y Documento Técnico profesionales *)",
+      "Read(//c/Users/unai6/Downloads/**)",
+      "Bash(pdfinfo \"/c/Users/unai6/Downloads/SuarezCarballoUnai_proyecto \\(1\\).pdf\")",
+      "Bash(pdftotext \"/c/Users/unai6/Downloads/SuarezCarballoUnai_proyecto \\(1\\).pdf\" -)",
+      "Read(//c/Users/unai6/AppData/Roaming/npm/**)",
+      "Bash(npm root *)",
+      "Bash(node generate-pdfs.mjs)",
+      "Bash(pandoc --version)",
+      "Bash(npm list *)",
+      "Bash(npm install *)",
+      "Bash(node generate-pdfs-node.mjs)",
+      "Bash(node /c/Users/unai6/AppData/Local/Programs/nodejs/node.exe E:/espaciSeguroClaude/cuentas-compartidas/docs/generate-pdfs-node.mjs)",
+      "Bash(node E:/espaciSeguroClaude/cuentas-compartidas/docs/generate-pdfs-node.mjs)",
+      "Bash(mv MANUAL_DE_USUARIO.pdf docs/)",
+      "Bash(mv DOCUMENTO_TECNICO.pdf docs/)",
+      "Bash(node *)",
+      "Bash(git -C /e/espaciSeguroClaude/cuentas-compartidas add docs/MANUAL_DE_USUARIO.pdf docs/DOCUMENTO_TECNICO.pdf docs/gen-manual.mjs docs/gen-tecnico.mjs)",
+      "Bash(git -C /e/espaciSeguroClaude/cuentas-compartidas rm --cached docs/generate-pdfs-node.mjs)",
+      "Bash(git -C /e/espaciSeguroClaude/cuentas-compartidas commit -m 'docs: regenerar PDFs completos y detallados \\(46-60 KB\\) *)"
+    ]
+  }
+}
