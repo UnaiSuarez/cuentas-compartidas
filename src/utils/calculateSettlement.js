@@ -1,15 +1,14 @@
 /**
- * Motor de cálculo de saldos y settlement optimizado.
+ * Motor de cálculo de saldos y settlement.
  *
- * Modos de pago:
- *  - individual: paidBy=uid → el pagador adelantó; los demás le deben su parte
- *  - common:     paidBy='common' → gasto del fondo colectivo; nadie adelanta
+ * Modelo financiero:
+ *   balance[uid] = Σ ingresos aportados  −  Σ partes en gastos
  *
- * Nota sobre saldoColectivo:
- *   Los gastos individuales son "zero-sum" (el pagador recibe crédito, los demás
- *   se debitan por la misma cantidad neta). Por tanto, el saldo del fondo colectivo
- *   real = total ingresos − total gastos COMUNES (no los individuales).
- *   La suma de todos los balances personales = saldoColectivo siempre.
+ *   - Los ingresos son la única forma de aumentar el saldo.
+ *   - Los gastos (individual o común) siempre debitan a los participantes.
+ *   - El campo paidBy en gastos individuales es informativo (quién pagó
+ *     físicamente) pero NO añade crédito al pagador.
+ *   - Σ balance[uid] = saldoColectivo = totalIngresos − totalGastos (siempre).
  */
 
 export function calculateBalances(transactions, users) {
@@ -17,10 +16,10 @@ export function calculateBalances(transactions, users) {
   users.forEach(u => { balances[u.id] = 0 })
 
   transactions.forEach(tx => {
-    const tipo           = tx.type        || tx.tipo
-    const monto          = tx.amount      || tx.monto
-    const pagado_por     = tx.paidBy      || tx.pagado_por
-    const dividido_entre = tx.splitAmong  || tx.dividido_entre
+    const tipo           = tx.type       || tx.tipo
+    const monto          = tx.amount     || tx.monto
+    const pagado_por     = tx.paidBy     || tx.pagado_por
+    const dividido_entre = tx.splitAmong || tx.dividido_entre
 
     if (tipo === 'income' || tipo === 'ingreso') {
       if (balances[pagado_por] !== undefined) balances[pagado_por] += monto
@@ -31,16 +30,11 @@ export function calculateBalances(transactions, users) {
     if (participantes.length === 0) return
     const partePorPersona = monto / participantes.length
 
-    if (pagado_por === 'common') {
-      participantes.forEach(uid => {
-        if (balances[uid] !== undefined) balances[uid] -= partePorPersona
-      })
-    } else {
-      if (balances[pagado_por] !== undefined) balances[pagado_por] += monto
-      participantes.forEach(uid => {
-        if (balances[uid] !== undefined) balances[uid] -= partePorPersona
-      })
-    }
+    // Todos los gastos (individual o común) debitan solo a los participantes.
+    // paidBy es informativo; no genera crédito para el pagador.
+    participantes.forEach(uid => {
+      if (balances[uid] !== undefined) balances[uid] -= partePorPersona
+    })
   })
 
   return balances
@@ -79,37 +73,25 @@ export function calculateOptimalPayments(balances) {
 }
 
 export function calculateGroupSummary(transactions, users) {
-  let totalIngresos        = 0
-  let totalGastos          = 0
-  let totalGastosComunes   = 0
-  let totalGastosIndividuales = 0
+  let totalIngresos = 0
+  let totalGastos   = 0
 
   transactions.forEach(tx => {
     const tipo  = tx.type   || tx.tipo
     const monto = tx.amount || tx.monto
-    const isCommon = (tx.paidBy || tx.pagado_por) === 'common' || tx.paymentMode === 'common'
-
-    if (tipo === 'income' || tipo === 'ingreso') {
-      totalIngresos += monto
-    } else {
-      totalGastos += monto
-      if (isCommon) totalGastosComunes    += monto
-      else          totalGastosIndividuales += monto
-    }
+    if (tipo === 'income' || tipo === 'ingreso') totalIngresos += monto
+    else                                          totalGastos   += monto
   })
 
   const balances     = calculateBalances(transactions, users)
   const pagosOptimos = calculateOptimalPayments(balances)
 
-  // saldoColectivo = dinero real en el fondo = ingresos − gastos comunes
-  // (gastos individuales son zero-sum: no afectan el saldo del fondo)
-  const saldoColectivo = totalIngresos - totalGastosComunes
+  // saldoColectivo = dinero real en el fondo = ingresos − todos los gastos
+  const saldoColectivo = totalIngresos - totalGastos
 
   return {
     totalIngresos,
     totalGastos,
-    totalGastosComunes,
-    totalGastosIndividuales,
     saldoColectivo,
     balances,
     pagosOptimos,
@@ -117,75 +99,49 @@ export function calculateGroupSummary(transactions, users) {
 }
 
 /**
- * Desglosa el saldo de cada usuario en componentes explicativos:
- *   collectivePosition = lo que le corresponde del fondo (ingresos propios − parte gastos comunes)
- *   peerPosition       = crédito/deuda neta con otros miembros (gastos individuales)
- *   balance            = collectivePosition + peerPosition
+ * Desglosa el saldo de cada usuario:
+ *   balance = contributed − expenseShare
  *
- * @param {Array}  transactions
- * @param {Array}  users          — [{ id }]
- * @returns {{ userBreakdowns, poolBalance, totalCommonExpenses }}
+ * Incluye paidAsProxy: el importe que cada persona pagó físicamente
+ * por cuenta del fondo (informativo, no afecta al balance).
  */
 export function calculateBalanceBreakdown(transactions, users) {
   const data = {}
   users.forEach(u => {
-    data[u.id] = {
-      contributed:   0,   // ingresos aportados
-      commonShare:   0,   // parte en gastos comunes
-      advanced:      0,   // gastos individuales que pagó (adelantó por otros)
-      selfPaidShare: 0,   // su propia parte cuando él mismo pagó
-      owedShare:     0,   // su parte de gastos pagados por otros
-    }
+    data[u.id] = { contributed: 0, expenseShare: 0, paidAsProxy: 0 }
   })
 
-  let poolBalance        = 0
-  let totalCommonExpenses = 0
+  let poolBalance = 0
 
   transactions.filter(tx => !tx.isSettlement).forEach(tx => {
     const paidBy       = tx.paidBy || tx.pagado_por
     const participants = tx.splitAmong || tx.dividido_entre || []
     const n            = participants.length || 1
-    const sharePerPerson = tx.amount / n
-    const isCommon     = paidBy === 'common' || tx.paymentMode === 'common'
+    const share        = tx.amount / n
 
     if (tx.type === 'income' || tx.tipo === 'ingreso') {
       if (data[paidBy]) {
         data[paidBy].contributed += tx.amount
         poolBalance += tx.amount
       }
-    } else if (isCommon) {
-      poolBalance          -= tx.amount
-      totalCommonExpenses  += tx.amount
-      participants.forEach(pid => {
-        if (data[pid]) data[pid].commonShare += sharePerPerson
-      })
     } else {
-      // Gasto individual: el pagador adelantó el dinero
-      if (data[paidBy]) {
-        data[paidBy].advanced += tx.amount
-        if (participants.includes(paidBy)) {
-          data[paidBy].selfPaidShare += sharePerPerson
-        }
+      poolBalance -= tx.amount
+      if (paidBy && paidBy !== 'common' && data[paidBy]) {
+        data[paidBy].paidAsProxy += tx.amount
       }
       participants.forEach(pid => {
-        if (pid !== paidBy && data[pid]) {
-          data[pid].owedShare += sharePerPerson
-        }
+        if (data[pid]) data[pid].expenseShare += share
       })
     }
   })
 
   const userBreakdowns = {}
   Object.entries(data).forEach(([uid, b]) => {
-    const collectivePosition = b.contributed - b.commonShare
-    const peerPosition       = (b.advanced - b.selfPaidShare) - b.owedShare
     userBreakdowns[uid] = {
       ...b,
-      collectivePosition,
-      peerPosition,
-      balance: collectivePosition + peerPosition,
+      balance: b.contributed - b.expenseShare,
     }
   })
 
-  return { userBreakdowns, poolBalance, totalCommonExpenses }
+  return { userBreakdowns, poolBalance }
 }

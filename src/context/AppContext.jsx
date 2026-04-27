@@ -6,7 +6,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth'
 import {
   doc, getDoc, collection,
   onSnapshot, query, orderBy,
-  where, updateDoc, serverTimestamp,
+  updateDoc, serverTimestamp,
 } from 'firebase/firestore'
 import { auth, db } from '../config/firebase'
 
@@ -29,7 +29,7 @@ export function AppProvider({ children }) {
   const [groupMembers,  setGroupMembers]  = useState([])
   const [transactions,  setTransactions]  = useState([])
   const [messages,      setMessages]      = useState([])
-  const [payments,      setPayments]      = useState([])
+  // payments eliminado: ya no se necesita flujo de confirmación manual
   const [categories,    setCategories]    = useState(defaultCategories())
   const [groupSettings, setGroupSettings] = useState(null)
 
@@ -39,7 +39,6 @@ export function AppProvider({ children }) {
 
   const unsubTxRef      = useRef(null)
   const unsubMsgRef     = useRef(null)
-  const unsubPayRef     = useRef(null)
   const unsubGroupRef   = useRef(null)
 
   const isAdmin = userProfile?.id != null && groupInfo?.createdBy === userProfile.id
@@ -105,7 +104,6 @@ export function AppProvider({ children }) {
   function cancelListeners() {
     unsubTxRef.current?.()
     unsubMsgRef.current?.()
-    unsubPayRef.current?.()
     unsubGroupRef.current?.()
   }
 
@@ -118,7 +116,6 @@ export function AppProvider({ children }) {
     setGroupMembers([])
     setTransactions([])
     setMessages([])
-    setPayments([])
     setGroupSettings(null)
   }
 
@@ -127,7 +124,6 @@ export function AppProvider({ children }) {
     setGroupMembers([])
     setTransactions([])
     setMessages([])
-    setPayments([])
     setGroupSettings(null)
     setCategories(defaultCategories())
   }
@@ -160,14 +156,6 @@ export function AppProvider({ children }) {
       (snap) => setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     )
 
-    unsubPayRef.current = onSnapshot(
-      query(
-        collection(db, 'groups', gId, 'payments'),
-        where('status', '==', 'pending'),
-        orderBy('createdAt', 'desc')
-      ),
-      (snap) => setPayments(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-    )
   }, [])
 
   /** Cambia la sala activa */
@@ -277,7 +265,7 @@ export function AppProvider({ children }) {
     firebaseUser, userProfile, groupId,
     userGroupIds, userRooms,
     groupInfo, groupMembers,
-    transactions, messages, payments,
+    transactions, messages,
     categories, groupSettings,
     isAdmin,
     loading, error, setError,

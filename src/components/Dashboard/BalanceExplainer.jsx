@@ -13,8 +13,7 @@ export default function BalanceExplainer() {
   const nonSettlement = transactions.filter(tx => !tx.isSettlement)
   if (!nonSettlement.length) return null
 
-  const { userBreakdowns, poolBalance, totalCommonExpenses } =
-    calculateBalanceBreakdown(nonSettlement, groupMembers)
+  const { userBreakdowns, poolBalance } = calculateBalanceBreakdown(nonSettlement, groupMembers)
 
   return (
     <div className="glass rounded-2xl overflow-hidden">
@@ -36,15 +35,13 @@ export default function BalanceExplainer() {
         <div className="px-4 pb-4 space-y-4">
           {/* Fondo colectivo */}
           <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3">
-            <p className="text-xs text-blue-300 font-medium mb-1">Fondo colectivo</p>
+            <p className="text-xs text-blue-300 font-medium mb-0.5">Fondo colectivo</p>
             <p className={`text-xl font-bold tabular-nums ${poolBalance >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
               {formatCurrency(poolBalance, true)}
             </p>
-            {totalCommonExpenses > 0 && (
-              <p className="text-xs text-slate-500 mt-0.5">
-                Gastos comunes pagados del fondo: {formatCurrency(totalCommonExpenses)}
-              </p>
-            )}
+            <p className="text-xs text-slate-500 mt-0.5">
+              Total aportado − total gastado por todos
+            </p>
           </div>
 
           {/* Desglose por persona */}
@@ -55,13 +52,11 @@ export default function BalanceExplainer() {
 
               const rows = []
               if (b.contributed > 0)
-                rows.push({ label: 'Aportó al fondo', value:  b.contributed,       sign: '+' })
-              if (b.commonShare > 0)
-                rows.push({ label: 'Parte gastos comunes', value: -b.commonShare,  sign: '-' })
-              if (b.advanced - b.selfPaidShare > 0)
-                rows.push({ label: 'Adelantó por otros', value:  b.advanced - b.selfPaidShare, sign: '+' })
-              if (b.owedShare > 0)
-                rows.push({ label: 'Debe a otros por gastos',   value: -b.owedShare, sign: '-' })
+                rows.push({ label: 'Aportó al fondo',    value:  b.contributed  })
+              if (b.expenseShare > 0)
+                rows.push({ label: 'Su parte en gastos', value: -b.expenseShare })
+              if (b.paidAsProxy > 0)
+                rows.push({ label: 'Pagó físicamente (informativo)', value: b.paidAsProxy, info: true })
 
               return (
                 <div key={member.id} className="bg-slate-800/40 rounded-xl p-3">
@@ -75,9 +70,18 @@ export default function BalanceExplainer() {
                     <div className="space-y-1 border-t border-slate-700/50 pt-2">
                       {rows.map((row, i) => (
                         <div key={i} className="flex justify-between text-xs">
-                          <span className="text-slate-400">{row.label}</span>
-                          <span className={row.value >= 0 ? 'text-emerald-400/80' : 'text-red-400/80'}>
-                            {row.value >= 0 ? '+' : ''}{formatCurrency(row.value)}
+                          <span className={row.info ? 'text-slate-600 italic' : 'text-slate-400'}>
+                            {row.label}
+                          </span>
+                          <span className={
+                            row.info
+                              ? 'text-slate-600'
+                              : row.value >= 0
+                              ? 'text-emerald-400/80'
+                              : 'text-red-400/80'
+                          }>
+                            {row.info ? '' : (row.value >= 0 ? '+' : '')}
+                            {formatCurrency(row.info ? row.value : row.value)}
                           </span>
                         </div>
                       ))}
@@ -91,7 +95,7 @@ export default function BalanceExplainer() {
           </div>
 
           <p className="text-xs text-slate-600 text-center">
-            La suma de todos los saldos siempre es igual al fondo colectivo.
+            Saldo = dinero aportado − parte en gastos. La suma de todos los saldos = fondo colectivo.
           </p>
         </div>
       )}

@@ -4,6 +4,7 @@ import { Plus, X, Check, TrendingUp, TrendingDown, Users, ChevronDown } from 'lu
 import { useApp }                  from '../../context/AppContext'
 import { useTransactions }         from '../../hooks/useTransactions'
 import { useChat }                 from '../../hooks/useChat'
+import { useSettlement }           from '../../hooks/useSettlement'
 import { formatCurrency }          from '../../utils/formatters'
 
 const today = () => new Date().toISOString().split('T')[0]
@@ -24,6 +25,10 @@ export default function TransactionForm({ onClose, editData = null }) {
   const { userProfile, groupMembers, categories } = useApp()
   const { createTransaction, updateTransaction, submitting, error } = useTransactions()
   const { sendSystemMessage } = useChat()
+  const { summary } = useSettlement()
+
+  // Deudas del usuario actual según los pagos óptimos
+  const myDebts = summary.pagosOptimos.filter(p => p.de === userProfile?.id)
 
   const [form, setForm] = useState(() => {
     if (editData) {
@@ -168,6 +173,22 @@ export default function TransactionForm({ onClose, editData = null }) {
       {isCommon && (
         <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 text-xs text-blue-300 mb-4">
           El gasto sale del fondo común. Nadie adelanta dinero individualmente; se divide entre los participantes.
+        </div>
+      )}
+
+      {isIncome && myDebts.length > 0 && (
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 mb-4">
+          <p className="text-amber-300 text-xs font-medium mb-1">💡 Tienes deudas pendientes</p>
+          {myDebts.map((d, i) => {
+            const creditorName = groupMembers.find(m => m.id === d.a)?.name || '?'
+            return (
+              <p key={i} className="text-slate-300 text-xs">
+                Al añadir <span className="text-white font-semibold">{formatCurrency(d.monto)}</span>,
+                pasarán a ser de <span className="text-emerald-400 font-medium">{creditorName}</span> y
+                tu deuda quedará saldada.
+              </p>
+            )
+          })}
         </div>
       )}
 
