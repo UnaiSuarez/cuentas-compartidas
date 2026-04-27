@@ -1,9 +1,4 @@
-/**
- * Lista completa de transacciones con búsqueda, filtros y CRUD.
- * Botón de exportación (Excel / PDF / CSV) arriba a la derecha.
- */
-
-import { useState, useMemo }          from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence }     from 'framer-motion'
 import {
   Plus, Search, Pencil, Trash2,
@@ -13,6 +8,7 @@ import { useApp }                      from '../../context/AppContext'
 import { useTransactions }             from '../../hooks/useTransactions'
 import { exportToExcel, exportToPDF, exportToCSV } from '../../utils/exporters'
 import { formatCurrency, formatDate }  from '../../utils/formatters'
+import { addRipple, addHoverParticles, staggerReveal } from '../../utils/animeHelpers'
 import TransactionForm                 from './TransactionForm'
 
 const DATE_FILTERS = [
@@ -21,6 +17,32 @@ const DATE_FILTERS = [
   { label: 'Esta semana', value: 'week'  },
   { label: 'Este mes',    value: 'month' },
 ]
+
+/** Botón con ripple y partículas al hover */
+function AnimatedButton({ onClick, className, children, 'data-tutorial': dataTutorial, particleColor = '#3b82f6' }) {
+  const btnRef = useRef(null)
+
+  const handleClick = useCallback((e) => {
+    if (btnRef.current) addRipple(e, btnRef.current)
+    onClick?.(e)
+  }, [onClick])
+
+  const handleMouseEnter = useCallback(() => {
+    if (btnRef.current) addHoverParticles(btnRef.current, particleColor)
+  }, [particleColor])
+
+  return (
+    <button
+      ref={btnRef}
+      onClick={handleClick}
+      onMouseEnter={handleMouseEnter}
+      className={className}
+      data-tutorial={dataTutorial}
+    >
+      {children}
+    </button>
+  )
+}
 
 export default function TransactionList() {
   const { transactions, groupMembers, categories, userProfile } = useApp()
@@ -35,9 +57,11 @@ export default function TransactionList() {
   const [deleting,   setDeleting]   = useState(null)
   const [showExport, setShowExport] = useState(false)
 
+  const listRef    = useRef(null)
+  const prevCount  = useRef(0)
+
   const getMemberName = id => groupMembers.find(m => m.id === id)?.name || '—'
 
-  // Filtra transacciones según todos los criterios activos
   const filtered = useMemo(() => {
     const now = new Date()
     const sod = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -45,7 +69,6 @@ export default function TransactionList() {
     const som = new Date(now.getFullYear(), now.getMonth(), 1)
 
     return transactions.filter(tx => {
-      // Búsqueda de texto
       if (search) {
         const q = search.toLowerCase()
         const match =
@@ -54,11 +77,8 @@ export default function TransactionList() {
           getMemberName(tx.paidBy).toLowerCase().includes(q)
         if (!match) return false
       }
-      // Tipo
       if (typeFilter !== 'all' && tx.type !== typeFilter) return false
-      // Categoría
       if (catFilter && tx.category !== catFilter) return false
-      // Fecha (Firestore Timestamp → toDate())
       if (dateFilter !== 'all') {
         const txDate = tx.date?.toDate ? tx.date.toDate() : new Date(tx.date)
         if (dateFilter === 'today' && txDate < sod) return false
@@ -69,20 +89,28 @@ export default function TransactionList() {
     })
   }, [transactions, search, dateFilter, typeFilter, catFilter, groupMembers])
 
+  // Stagger reveal cuando cambia la lista filtrada
+  useEffect(() => {
+    if (!listRef.current) return
+    const items = listRef.current.querySelectorAll('[data-tx-item]')
+    if (!items.length) return
+    // Solo animar si la cantidad cambió significativamente (filtro nuevo o carga inicial)
+    if (Math.abs(items.length - prevCount.current) > 1 || prevCount.current === 0) {
+      staggerReveal(items, { duration: 400, staggerMs: 35, translateY: 12 })
+    }
+    prevCount.current = items.length
+  }, [filtered.length, search, dateFilter, typeFilter, catFilter])
+
   function openEdit(tx) { setEditData(tx);   setShowForm(true) }
   function openNew()    { setEditData(null);  setShowForm(true) }
 
   async function handleDelete(id) {
     if (!confirm('¿Eliminar esta transacción? No se puede deshacer.')) return
     setDeleting(id)
-    try {
-      await deleteTransaction(id)
-    } finally {
-      setDeleting(null)
-    }
+    try { await deleteTransaction(id) }
+    finally { setDeleting(null) }
   }
 
-  // Normaliza transacciones para los exportadores
   function prepareExportData() {
     return filtered.map(tx => ({
       fecha:      tx.date?.toDate ? tx.date.toDate() : new Date(tx.date),
@@ -140,20 +168,21 @@ export default function TransactionList() {
             )}
           </div>
 
-          {/* Nueva transacción */}
-          <button
+          {/* Nueva transacción con partículas */}
+          <AnimatedButton
             data-tutorial="new-transaction"
             onClick={openNew}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white
-                       px-4 py-2 rounded-xl text-sm font-medium transition-all active:scale-95"
+            particleColor="#3b82f6"
+            className="relative flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white
+                       px-4 py-2 rounded-xl text-sm font-medium transition-all active:scale-95 overflow-hidden"
           >
             <Plus size={16}/>
             Nueva
-          </button>
+          </AnimatedButton>
         </div>
       </div>
 
-      {/* Formulario (inline, con animación) */}
+      {/* Formulario */}
       <AnimatePresence>
         {showForm && (
           <TransactionForm
@@ -163,7 +192,7 @@ export default function TransactionList() {
         )}
       </AnimatePresence>
 
-      {/* Barra de búsqueda */}
+      {/* Búsqueda */}
       <div className="relative">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
         <input
@@ -186,7 +215,6 @@ export default function TransactionList() {
 
       {/* Filtros */}
       <div className="flex gap-2 flex-wrap">
-        {/* Por tipo */}
         {[
           { value: 'all',     label: 'Todo'       },
           { value: 'expense', label: '📉 Gastos'  },
@@ -204,7 +232,6 @@ export default function TransactionList() {
             {t.label}
           </button>
         ))}
-        {/* Por fecha */}
         {DATE_FILTERS.map(f => (
           <button
             key={f.value}
@@ -220,7 +247,6 @@ export default function TransactionList() {
         ))}
       </div>
 
-      {/* Contador de resultados */}
       <p className="text-xs text-slate-500">
         {filtered.length} resultado{filtered.length !== 1 ? 's' : ''}
       </p>
@@ -232,17 +258,16 @@ export default function TransactionList() {
           <p className="text-slate-400">No hay transacciones que coincidan.</p>
         </div>
       ) : (
-        <div className="space-y-2">
-          {filtered.map((tx, i) => {
+        <div ref={listRef} className="space-y-2">
+          {filtered.map((tx) => {
             const isIncome = tx.type === 'income'
             const txDate   = tx.date?.toDate ? tx.date.toDate() : new Date(tx.date)
             return (
-              <motion.div
+              <div
                 key={tx.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: Math.min(i * 0.03, 0.3) }}
-                className="glass rounded-xl p-4 flex items-center gap-3"
+                data-tx-item
+                className="glass rounded-xl p-4 flex items-center gap-3
+                           hover:bg-slate-800/60 transition-colors cursor-default"
               >
                 {/* Icono */}
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0
@@ -304,7 +329,7 @@ export default function TransactionList() {
                     }
                   </button>
                 </div>
-              </motion.div>
+              </div>
             )
           })}
         </div>

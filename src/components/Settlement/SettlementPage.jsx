@@ -1,18 +1,42 @@
-/**
- * Página de liquidación de deudas.
- *
- * Muestra saldo de cada miembro y pagos óptimos calculados.
- * El saldo se actualiza automáticamente cuando alguien añade un ingreso:
- * no hay flujo manual de confirmación.
- */
-
+import { useRef, useEffect, useState } from 'react'
 import { useNavigate }   from 'react-router-dom'
 import { motion }        from 'framer-motion'
-import { ArrowRight, Plus } from 'lucide-react'
+import { Plus }          from 'lucide-react'
+import { animate, svg }  from 'animejs'
 import { useApp }        from '../../context/AppContext'
 import { useSettlement } from '../../hooks/useSettlement'
 import { formatCurrency, amountColor } from '../../utils/formatters'
 import { getAvatarByKey } from '../../assets/avatars'
+import { revealOnScroll } from '../../utils/animeHelpers'
+import Confetti           from '../Common/Confetti'
+
+/** Flecha SVG que se dibuja sola con anime.js */
+function AnimatedArrow({ delay = 0 }) {
+  const pathRef = useRef(null)
+  useEffect(() => {
+    if (!pathRef.current) return
+    const drawable = svg.createDrawable(pathRef.current)
+    animate(drawable, {
+      draw:     ['0 0', '0 1'],
+      duration: 700,
+      delay,
+      easing:   'easeInOutQuart',
+    })
+  }, [delay])
+
+  return (
+    <svg width="72" height="18" viewBox="0 0 72 18" fill="none" className="shrink-0">
+      <path
+        ref={pathRef}
+        d="M 4 9 L 56 9 M 48 3 L 58 9 L 48 15"
+        stroke="#334155"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
 
 export default function SettlementPage() {
   const navigate = useNavigate()
@@ -26,13 +50,39 @@ export default function SettlementPage() {
   const isDebtor    = myDebts.length   > 0
   const isCreditor  = myCredits.length > 0
 
+  // Confeti cuando no hay deudas
+  const [confetti, setConfetti] = useState(false)
+  const prevPagos = useRef(-1)
+  useEffect(() => {
+    const count = summary.pagosOptimos.length
+    if (prevPagos.current > 0 && count === 0) {
+      setConfetti(c => !c)   // toggle para re-trigger
+    }
+    prevPagos.current = count
+  }, [summary.pagosOptimos.length])
+
+  // Scroll reveal para secciones
+  const balanceSectionRef = useRef(null)
+  const paymentSectionRef = useRef(null)
+  useEffect(() => {
+    const c1 = revealOnScroll(balanceSectionRef.current, { delay: 0 })
+    const c2 = revealOnScroll(paymentSectionRef.current, { delay: 80 })
+    return () => { c1(); c2() }
+  }, [])
+
   return (
     <div className="space-y-6">
+      <Confetti trigger={confetti}/>
+
       <h2 className="text-xl font-bold text-white">Liquidación</h2>
 
       {/* Info contextual para el usuario */}
       {isDebtor && (
-        <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4"
+        >
           <p className="text-red-300 text-sm font-medium mb-1">Tienes deudas pendientes</p>
           {myDebts.map((p, i) => (
             <p key={i} className="text-slate-300 text-sm">
@@ -48,11 +98,15 @@ export default function SettlementPage() {
           >
             <Plus size={14}/> Añadir ingreso
           </button>
-        </div>
+        </motion.div>
       )}
 
       {isCreditor && !isDebtor && (
-        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4"
+        >
           <p className="text-emerald-300 text-sm font-medium mb-1">Te deben dinero</p>
           {myCredits.map((p, i) => (
             <p key={i} className="text-slate-300 text-sm">
@@ -61,11 +115,11 @@ export default function SettlementPage() {
               Tu saldo se actualizará en cuanto añada fondos al grupo.
             </p>
           ))}
-        </div>
+        </motion.div>
       )}
 
-      {/* ── Saldo por persona ──────────────────────────────────────────────── */}
-      <div className="glass rounded-2xl p-5">
+      {/* Saldo por persona */}
+      <div ref={balanceSectionRef} className="glass rounded-2xl p-5" style={{ opacity: 0 }}>
         <p className="text-slate-400 text-xs uppercase tracking-wider mb-4">Saldo actual</p>
         <div className="space-y-3">
           {groupMembers.map((member, i) => {
@@ -83,7 +137,7 @@ export default function SettlementPage() {
                             ${isMe ? 'bg-blue-500/10 border border-blue-500/20' : 'bg-slate-800/40'}`}
               >
                 <div className="shrink-0">
-                  <Av state={state} color={member.color || '#2563eb'} size={48}/>
+                  <Av key={state} state={state} color={member.color || '#2563eb'} size={48}/>
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-white font-semibold text-sm">
@@ -102,9 +156,9 @@ export default function SettlementPage() {
         </div>
       </div>
 
-      {/* ── Pagos óptimos ─────────────────────────────────────────────────── */}
+      {/* Pagos óptimos con flecha SVG animada */}
       {summary.pagosOptimos.length > 0 ? (
-        <div data-tutorial="optimal-payments" className="glass rounded-2xl p-5">
+        <div ref={paymentSectionRef} data-tutorial="optimal-payments" className="glass rounded-2xl p-5" style={{ opacity: 0 }}>
           <p className="text-slate-400 text-xs uppercase tracking-wider mb-1">Pagos a realizar</p>
           <p className="text-slate-500 text-xs mb-4">
             Añade el importe como ingreso y el saldo se ajustará solo.
@@ -121,23 +175,13 @@ export default function SettlementPage() {
                   className={`flex items-center justify-between p-4 rounded-xl
                               ${isMe ? 'bg-red-500/10 border border-red-500/20' : 'bg-slate-800/40'}`}
                 >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="text-center">
-                      <p className="text-xs text-red-400 font-medium truncate max-w-[80px]">
-                        {getMemberName(p.de)}
-                      </p>
-                      <p className="text-xs text-slate-600">añade</p>
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <ArrowRight size={16} className="text-slate-400"/>
+                  <div className="flex items-center gap-3 min-w-0 flex-wrap">
+                    <p className="text-xs text-red-400 font-medium">{getMemberName(p.de)}</p>
+                    <div className="flex flex-col items-center gap-0.5">
+                      <AnimatedArrow delay={i * 120}/>
                       <span className="text-white font-bold text-sm">{formatCurrency(p.monto)}</span>
                     </div>
-                    <div className="text-center">
-                      <p className="text-xs text-emerald-400 font-medium truncate max-w-[80px]">
-                        {getMemberName(p.a)}
-                      </p>
-                      <p className="text-xs text-slate-600">recibe</p>
-                    </div>
+                    <p className="text-xs text-emerald-400 font-medium">{getMemberName(p.a)}</p>
                   </div>
                   {isMe && (
                     <button

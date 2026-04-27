@@ -292,3 +292,250 @@ Los gastos individuales son zero-sum (el crédito del pagador cancela exactament
 ## Licencia
 
 MIT
+
+
+This session is being continued from a previous conversation that ran out of context. The summary below covers the
+     earlier portion of the conversation.
+
+     Summary:
+     1. Primary Request and Intent:
+
+     The session had two phases:
+
+     **Phase 1 — Documentation review and commit:**
+     - User asked to review project files (especially CLAUDE.md) for context
+     - User then asked to review the manual and technical document for completeness before committing unstaged changes
+     - The user then added a new requirement: the Firestore security rules had changed — the `isAdmin()` function was
+     removed and `allow delete` was inlined as `request.auth.uid == resource.data.createdBy`. User provided the new
+     complete rules.
+     - Fix all errors, update all documentation files, regenerate PDFs, commit and push.
+
+     **Phase 2 — Code changes (in progress at time of summary):**
+     1. **Balance display**: When someone (Alex) owes money to another (Unai), Unai's displayed balance should NOT
+     pre-count that owed amount. Show settled vs pending separately. Example: Unai=+30, Alex=-5, pending 5€ Alex→Unai →
+     show Unai=+25 (available) + 5€ pending, not +30 as a single number.
+     2. **Duplicate payments bug**: Clicking "He pagado" multiple times creates duplicate payment records. Should
+     prevent this.
+     3. **First-time tutorial**: Create a walkthrough/onboarding for users accessing the app for the first time.
+     4. **Statistics "Mis datos"**: In personal view, use the user's proportional share of expenses (not full amounts).
+     If there are common expenses, calculate just the user's portion.
+
+     ---
+
+     2. Key Technical Concepts:
+     - React 18 + Vite + Tailwind CSS + Firebase (Auth + Firestore) SPA
+     - Cuentas Compartidas v2.1 — shared expense management for flatmates/groups
+     - Multi-room support (users can belong to N groups), admin role, common expense mode
+     - **calculateBalances**: greedy algorithm, handles `paidBy='common'` (no credit to payer), individual (payer gets
+     credit, participants debited), income
+     - **calculateOptimalPayments**: greedy O(n log n) — minimum transfers to settle all debts
+     - **calculateBalanceBreakdown**: decomposes balance into collectivePosition + peerPosition
+     - **Invariant**: `Σ balances[uid] = saldoColectivo = totalIngresos - totalGastosComunes`
+     - Firestore listeners (onSnapshot) for realtime sync across devices
+     - AppContext: central state with all Firestore listeners; `payments` array = pending Firestore documents
+     - `summary.pagosOptimos` = in-memory calculated optimal payments (not Firestore)
+     - Individual expenses are zero-sum (don't affect saldoColectivo); common expenses reduce it
+     - PDFKit (Node.js) for generating documentation PDFs via `gen-manual.mjs` and `gen-tecnico.mjs`
+     - Conventional Commits, Vercel deploy with VITE_FIREBASE_* env vars
+     - Firestore security rules: `isMember()` function, `allow delete` checks `request.auth.uid ==
+     resource.data.createdBy` (no longer uses `isAdmin()` function)
+
+     ---
+
+     3. Files and Code Sections:
+
+     **`firestore.rules`** — Updated to remove `isAdmin()` function and inline the delete rule:
+     ```javascript
+     // Removed:
+     function isAdmin() {
+       return request.auth != null
+           && resource.data.createdBy == request.auth.uid;
+     }
+     allow delete: if isAdmin();
+
+     // Now:
+     allow delete: if request.auth != null
+                  && request.auth.uid == resource.data.createdBy;
+     ```
+     Also updated comments to match the new rules structure provided by user.
+
+     **`README.md`** — Same security rules change: removed `isAdmin()` function, updated `allow delete`, added
+     explanatory comments matching user's provided rules.
+
+     **`docs/DOCUMENTO_TECNICO.md`** — Added full Firestore rules code block under the security section; updated the
+     "Eliminar grupo" table row to say "Solo el creador (createdBy)".
+
+     **`docs/gen-manual.mjs`** (PDF generator for user manual):
+     - FAQ fix: "¿Puedo estar en varios grupos a la vez?" changed from "No" to "Sí. Desde la versión 2.0, cada usuario
+     puede pertenecer a varias salas..."
+     - Section 5.1 "Tipo" bullet changed to describe all 3 modes: Gasto individual, Gasto Común (nadie acumula crédito
+     individual), Ingreso
+     - Added note about "Fondo común" badge in transaction list
+     - Version corrected from '1.0' to '2.1' (was already in unstaged changes)
+
+     **`docs/gen-tecnico.mjs`** (PDF generator for technical document):
+     - users collection schema: `groupId: string|null` → `groupIds: [string]`, avatar `"avatar0"..."avatar17"`, added
+     `color` field
+     - messages subcollection: updated to `type: "message"|"system"|"payment_reminder"`, `sender`, `senderName`,
+     `senderAvatar`, `readBy`, `fromUserId?`, `toUserId?`, `amount?`
+     - payments subcollection: updated to `from`, `to`, `amount`, `status`, `confirmedAt?`, `confirmedBy?`
+     - calculateBalances code block: added `paidBy === "common"` branch (only debit participants, no credit to payer)
+     - Security rules code block: updated to full new rules with `isMember()`, individual subcollections, inlined delete
+     - Component diagram: added `RoomSelector.jsx` and `BalanceExplainer.jsx`
+     - Directory tree: "15+ SVGs" → "18 avatares SVG con animaciones"
+     - Dashboard.jsx description: added mention of BalanceExplainer component
+     - Technology field: 'React 19 + Firebase + Tailwind CSS v4' → 'React 18 + Firebase + Tailwind CSS'
+
+     **PDFs regenerated** by running `node gen-manual.mjs && node gen-tecnico.mjs` from the docs directory.
+
+     **Commit:** "docs: corregir documentación y reglas Firestore para v2.1" — pushed to origin/main.
+
+     ---
+
+     **Code changes (Phase 2 — in progress):**
+
+     **`src/hooks/useSettlement.js`** — Added duplicate prevention in `requestPayment`:
+     ```javascript
+     async function requestPayment(toUserId, amount) {
+       if (!groupId || !userProfile) return
+
+       // Evitar duplicados: si ya existe un pending de mí a esa persona por ese importe, no crear otro
+       const alreadyDeclared = payments.some(
+         p => p.from === userProfile.id && p.to === toUserId && Math.abs(p.amount - amount) < 0.01
+       )
+       if (alreadyDeclared) return
+
+       setConfirming(true)
+       try {
+         await addDoc(collection(db, 'groups', groupId, 'payments'), {
+           from: userProfile.id, to: toUserId, amount, status: 'pending', createdAt: serverTimestamp(),
+         })
+         await sendPaymentReminder(userProfile.id, toUserId, amount, groupMembers)
+       } finally {
+         setConfirming(false)
+       }
+     }
+     ```
+     Note: `payments` is already destructured from `useApp()` at the top of the hook.
+
+     **`src/components/Dashboard/BalanceCard.jsx`** — Completely rewritten:
+     - Renamed destructured `payments` from useApp to `pendingPayments` to avoid conflict with useSettlement
+     - Removed `payments` from useSettlement destructure (not needed there)
+     - For each optimal payment where user is the debtor: check `alreadyDeclared` against `pendingPayments`
+     - If declared: show `<span className="text-xs text-amber-400 ...">Declarado ✓</span>`
+     - If not: show "He pagado" button (same as before)
+     ```javascript
+     const { userProfile, groupMembers, payments: pendingPayments } = useApp()
+     const { summary, requestPayment, confirmPayment, confirming }  = useSettlement()
+
+     // For each optimal payment p:
+     const alreadyDeclared = isDebtor && pendingPayments.some(
+       pay => pay.from === userProfile?.id &&
+              pay.to === p.a &&
+              Math.abs(pay.amount - p.monto) < 0.01
+     )
+     ```
+
+     **`src/components/Settlement/SettlementPage.jsx`** — Two changes:
+     1. Renamed `payments` → `pendingPayments` from useApp, removed from useSettlement:
+     ```javascript
+     const { userProfile, groupMembers, payments: pendingPayments } = useApp()
+     const { summary, requestPayment, confirmPayment, confirming }  = useSettlement()
+     ```
+     2. Added `alreadyDeclared` check per optimal payment, showing "Declarado ✓" or "He pagado" button
+     3. Changed `payments.length > 0` → `pendingPayments.length > 0` in the pending section
+
+     ---
+
+     4. Errors and Fixes:
+     - **Edit tool: String not found**: When trying to replace `'│   └── assets/'` in gen-tecnico.mjs, the exact string
+     wasn't found. Used Grep to find the actual line (line 450), which had `'│   │   └── avatars/'` — then used the
+     correct string.
+     - **Naming collision**: `payments` existed both in `useApp()` and was previously returned from `useSettlement()`.
+     Fixed by renaming the AppContext destructured value to `pendingPayments` in both BalanceCard.jsx and
+     SettlementPage.jsx, and removing `payments` from the useSettlement return destructure.
+
+     ---
+
+     5. Problem Solving:
+     - **Documentation inconsistency**: Generator files (.mjs) were significantly out of date vs the markdown files
+     (.md). Fixed by updating all schema definitions, security rules, component diagrams, and content in generators,
+     then regenerating PDFs.
+     - **Firestore rules change**: User provided new rules without `isAdmin()` function. Updated firestore.rules,
+     README.md, DOCUMENTO_TECNICO.md, and gen-tecnico.mjs.
+     - **Duplicate payment records**: Fixed by checking existing `payments` array in `requestPayment` before creating a
+     new Firestore document.
+     - **UI consistency for duplicate prevention**: Both BalanceCard and SettlementPage now show "Declarado ✓" badge
+     when a payment has already been declared by the user.
+
+     ---
+
+     6. All User Messages:
+     - "revisa los archivos de esa carpeta especialmente CLAUDE.md para contexto, una vez lo tengas me dices"
+     - "los cambios que no esten subidos, subelos, aunque antes revisa que el manual y el documento tecnico estan bien y
+      completos"
+     - "arregla los errores, ademas, ten encuenta para la documentacion y para el readme que las normas de firebase
+     cambiaron y son estas [provided new firestore.rules]"
+     - "ahora vamos a tocar codigo, hay diferentes cosas que cambiar, la primera es como se gestionan los gastos, en el
+     contexto de que un usuario esta en negativo y debe dinero a otro, no quiero que este otro se le sume ya ese dinero,
+      es decir, hasta ahora si unai tenia 30, alex 20, unai paga una cena de 50 para los 2, quedaria en 30 denuevo y
+     alex en -5, pero no deberia ser asi, deberia quedar unai en 25, alex en -5 y pendiente de alex a unai 5€, ya que
+     esta en negativo, entonces, quiero que muestre el dinero total, pero si ocurre un caso como este, que sepa
+     diferenciar entre dinero, ya que esos 5€ no estan en la cuenta, y es dinero que debe alex a unai, por otro lado, en
+      la pestaña 'esperando confirmación' cada vez que lo doy al botón de he pagado se crea una nueva, aunque sea la
+     misma, no quiero que sea asi, ademas, quiero que crees un tutorial, para las personas que acceden por primera vez,
+     un pequeño recorrido explicando todo, tambien en estadisticas, en 'mis datos' quiero que solo sea con los gastos e
+     ingresos del usuario, y si hay comunes, que se calcule su parte, creo que no me dejo nada, gracias"
+
+     ---
+
+     7. Pending Tasks:
+     1. **Balance display in `Dashboard.jsx`**: Show `myBalance - myPendingReceivable` as the main personal balance
+     number. `myPendingReceivable` = sum of `summary.pagosOptimos` where `a === userProfile.id`. Show "X€ disponible ·
+     Y€ pendiente de cobro de [name]" breakdown below the main number.
+     2. **`StatisticsPage.jsx` fix**: In "Mis datos" view, `byCategory` and `monthly` should use `tx.amount /
+     splitAmong.length` (user's share) instead of `tx.amount`. The main "Mis gastos" card should show `myExpense` as the
+      primary number (not `totalGastos`). The `filteredTx` filter can remain the same.
+     3. **New `Tutorial.jsx` component**: Create a full-screen modal overlay with ~6 steps covering Dashboard,
+     Transacciones, Liquidación, Estadísticas, Chat, Ajustes. Use localStorage key `tutorial_seen_${uid}` to show only
+     once.
+     4. **`App.jsx` integration**: Add `showTutorial` state and `<Tutorial>` render after user is fully authenticated
+     and has a group. Handle `onDone` to set localStorage and hide.
+
+     ---
+
+     8. Current Work:
+     The session was interrupted after modifying `SettlementPage.jsx`. The last three edits were:
+     1. Renamed `payments` → `pendingPayments` and removed `payments` from useSettlement
+     2. Added `alreadyDeclared` logic with "Declarado ✓" badge
+     3. Replaced `payments.length > 0` with `pendingPayments.length > 0` in the pending payments section
+
+     The duplicate payments bug fix is now complete across `useSettlement.js`, `BalanceCard.jsx`, and
+     `SettlementPage.jsx`. The remaining work is the balance display change (Dashboard.jsx), statistics fix
+     (StatisticsPage.jsx), and tutorial creation (new Tutorial.jsx + App.jsx integration).
+
+     ---
+
+     9. Optional Next Step:
+     Continue with the balance display change in `Dashboard.jsx`. The user said:
+
+     "deberia quedar unai en 25, alex en -5 y pendiente de alex a unai 5€, ya que esta en negativo, entonces, quiero que
+      muestre el dinero total, pero si ocurre un caso como este, que sepa diferenciar entre dinero, ya que esos 5€ no
+     estan en la cuenta"
+
+     The next step is to modify `Dashboard.jsx` to calculate `myPendingReceivable = summary.pagosOptimos.filter(p => p.a
+      === userProfile?.id).reduce((s, p) => s + p.monto, 0)` and display `myBalance - myPendingReceivable` as the main
+     saldo number, with a sub-line showing the pending amounts and from whom — so Unai sees "+25€" prominently and "+5€
+     pendiente de cobro de Alex" below it.
+
+     If you need specific details from before compaction (like exact code snippets, error messages, or content you
+     generated), read the full transcript at: C:\Users\unai6\.claude\projects\E--espaciSeguroClaude-cuentas-compartidas\
+     e86b906c-4f88-492e-a655-dfcc191865b1.jsonl
+     Continue the conversation from where it left off without asking the user any further questions. Resume directly —
+     do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar.
+     Pick up the last task as if the break never happened.
+  ⎿  Read src\components\Settlement\SettlementPage.jsx (188 lines)
+  ⎿  Read src\components\Dashboard\BalanceCard.jsx (124 lines)
+  ⎿  Read src\hooks\useSettlement.js (135 lines)
+  ⎿  Referenced file docs\gen-tecnico.mjs
+  ⎿  Referenced file docs\gen-manual.mjs

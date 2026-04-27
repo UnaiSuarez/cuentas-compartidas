@@ -1,17 +1,30 @@
-/**
- * Pantalla principal del dashboard.
- * Muestra: avatares animados, saldo personal, tarjetas de resumen y pagos pendientes.
- */
-
-import { useMemo }        from 'react'
+import { useMemo, useEffect, useRef } from 'react'
 import { motion }         from 'framer-motion'
 import { TrendingUp, TrendingDown, Wallet, Users } from 'lucide-react'
 import { useApp }         from '../../context/AppContext'
 import { useSettlement }  from '../../hooks/useSettlement'
 import { formatCurrency, amountColor } from '../../utils/formatters'
+import { useAnimatedCounter }          from '../../hooks/useAnimatedCounter'
+import { setupTilt, revealOnScroll }   from '../../utils/animeHelpers'
 import AvatarScene        from './AvatarScene'
 import BalanceCard        from './BalanceCard'
 import BalanceExplainer   from './BalanceExplainer'
+
+/** Tarjeta con tilt 3D y scroll reveal */
+function TiltCard({ children, className, delay = 0 }) {
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!ref.current) return
+    const cleanup = setupTilt(ref.current)
+    const cleanReveal = revealOnScroll(ref.current, { delay })
+    return () => { cleanup(); cleanReveal() }
+  }, [])
+  return (
+    <div ref={ref} className={className} style={{ opacity: 0 }}>
+      {children}
+    </div>
+  )
+}
 
 export default function Dashboard() {
   const { userProfile, groupMembers, loading } = useApp()
@@ -19,18 +32,40 @@ export default function Dashboard() {
 
   const getMemberName = id => groupMembers.find(m => m.id === id)?.name || '?'
 
-  // Saldo total del usuario (incluye lo que le deben pero aún no han pagado)
   const myBalance = userProfile ? (summary.balances[userProfile.id] ?? 0) : null
 
-  // Pagos óptimos donde el usuario es el acreedor (le deben pagar)
   const pendingFrom = useMemo(() => {
     if (!userProfile) return []
     return summary.pagosOptimos.filter(p => p.a === userProfile.id)
   }, [summary.pagosOptimos, userProfile])
 
   const myPendingReceivable = pendingFrom.reduce((s, p) => s + p.monto, 0)
-  // Dinero realmente disponible (descontando lo que otros aún no han pagado)
-  const myAvailableBalance = myBalance !== null ? myBalance - myPendingReceivable : null
+  const myAvailableBalance  = myBalance !== null ? myBalance - myPendingReceivable : null
+
+  // Contador animado del saldo principal
+  const balanceRef = useAnimatedCounter(
+    myAvailableBalance ?? 0,
+    v => formatCurrency(v, true),
+    950,
+  )
+
+  // Refs para scroll reveal de las secciones
+  const balanceCardRef  = useRef(null)
+  const summaryGridRef  = useRef(null)
+  const memberGridRef   = useRef(null)
+  const explainerRef    = useRef(null)
+  const paymentCardRef  = useRef(null)
+
+  useEffect(() => {
+    if (loading) return
+    const cleanups = [
+      revealOnScroll(summaryGridRef.current,  { delay: 0,   translateY: 20 }),
+      revealOnScroll(memberGridRef.current,   { delay: 80,  translateY: 20 }),
+      revealOnScroll(explainerRef.current,    { delay: 120, translateY: 20 }),
+      revealOnScroll(paymentCardRef.current,  { delay: 160, translateY: 20 }),
+    ].filter(Boolean)
+    return () => cleanups.forEach(fn => fn())
+  }, [loading])
 
   const cards = [
     {
@@ -71,25 +106,26 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Avatares animados de todos los miembros */}
       <AvatarScene
         users={groupMembers}
         balances={summary.balances}
         activeUser={userProfile}
       />
 
-      {/* Mi saldo: número grande, protagonista */}
+      {/* Mi saldo: número grande animado */}
       {userProfile && (
         <motion.div
+          ref={balanceCardRef}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           data-tutorial="my-balance"
           className="glass rounded-2xl p-6 text-center"
         >
           <p className="text-slate-400 text-sm mb-1">Tu saldo, {userProfile.name}</p>
-          <p className={`text-5xl font-bold tabular-nums ${amountColor(myAvailableBalance)}`}>
-            {formatCurrency(myAvailableBalance, true)}
-          </p>
+          <p
+            ref={balanceRef}
+            className={`text-5xl font-bold tabular-nums ${amountColor(myAvailableBalance)}`}
+          />
           {myPendingReceivable > 0.01 && (
             <p className="text-amber-400 text-xs mt-2 space-x-1">
               <span>+ {formatCurrency(myPendingReceivable)} pendiente de cobro</span>
@@ -101,25 +137,25 @@ export default function Dashboard() {
             </p>
           )}
           <p className="text-slate-500 text-xs mt-1.5">
-            {myBalance > 0
-              ? 'Te deben dinero ✅'
-              : myBalance < 0
-              ? 'Debes dinero ⚠️'
+            {myAvailableBalance > 0.01
+              ? 'Saldo disponible ✅'
+              : myAvailableBalance < -0.01
+              ? 'Necesitas aportar fondos ⚠️'
+              : myPendingReceivable > 0.01
+              ? 'Pendiente de cobro ⏳'
               : 'Estás en paz 🎉'}
           </p>
         </motion.div>
       )}
 
-      {/* Tarjetas de resumen */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* Tarjetas de resumen con tilt 3D y scroll reveal */}
+      <div ref={summaryGridRef} className="grid grid-cols-2 lg:grid-cols-4 gap-3" style={{ opacity: 0 }}>
         {cards.map((card, i) => {
           const Icon = card.icon
           return (
-            <motion.div
+            <TiltCard
               key={card.label}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.08 }}
+              delay={i * 60}
               className="glass rounded-xl p-4"
             >
               <div className="flex items-center justify-between mb-3">
@@ -137,14 +173,14 @@ export default function Dashboard() {
               }`}>
                 {card.isCurrency ? formatCurrency(card.value) : card.value}
               </p>
-            </motion.div>
+            </TiltCard>
           )
         })}
       </div>
 
-      {/* Saldo individual de cada miembro */}
+      {/* Saldo por persona */}
       {groupMembers.length > 0 && (
-        <div className="glass rounded-2xl p-4">
+        <div ref={memberGridRef} className="glass rounded-2xl p-4" style={{ opacity: 0 }}>
           <p className="text-slate-400 text-xs uppercase tracking-wider mb-3">Saldo por persona</p>
           <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(groupMembers.length, 3)}, 1fr)` }}>
             {groupMembers.map(member => {
@@ -162,11 +198,13 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Explicación de saldos */}
-      <BalanceExplainer />
+      <div ref={explainerRef} style={{ opacity: 0 }}>
+        <BalanceExplainer />
+      </div>
 
-      {/* Pagos óptimos y confirmaciones pendientes */}
-      <BalanceCard />
+      <div ref={paymentCardRef} style={{ opacity: 0 }}>
+        <BalanceCard />
+      </div>
     </div>
   )
 }

@@ -1,67 +1,103 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { animate, svg }  from 'animejs'
 
-const PAD = 10         // px de holgura alrededor del elemento
-const TOOLTIP_W = 310  // ancho del tooltip (px)
-const TOOLTIP_H = 210  // alto aprox. del tooltip (px)
+const PAD = 10
+const TOOLTIP_W = 310
+const TOOLTIP_H = 220
 
 const STEPS = [
   {
-    route: '/',
+    route:    '/',
     selector: null,
-    emoji: '👋',
-    title: '¡Bienvenido/a!',
-    desc: 'La app para gestionar gastos con tu piso o grupo sin dramas. Te hacemos un recorrido rápido por las partes principales.',
+    emoji:    '👋',
+    title:    '¡Bienvenido/a!',
+    desc:     'La app para gestionar gastos con tu piso o grupo sin dramas. Te hacemos un recorrido rápido por las partes principales.',
   },
   {
-    route: '/',
+    route:    '/',
     selector: '[data-tutorial="my-balance"]',
-    emoji: '💰',
-    title: 'Tu saldo personal',
-    desc: 'Aquí ves tu saldo neto real: el dinero "limpio" que ya está confirmado. Si alguien te debe, aparece desglosado en ámbar justo debajo.',
+    emoji:    '💰',
+    title:    'Tu saldo personal',
+    desc:     'Aquí ves tu saldo neto real. El número se actualiza en vivo con el grupo. Si alguien te debe, aparece desglosado en ámbar justo debajo.',
   },
   {
-    route: '/transacciones',
+    route:    '/transacciones',
     selector: '[data-tutorial="new-transaction"]',
-    emoji: '📝',
-    title: 'Registra un gasto',
-    desc: 'Pulsa este botón para añadir un gasto o ingreso. Elige quién pagó, entre quiénes se divide y la categoría. El modo "Gasto Común" es para el bote del piso.',
+    emoji:    '📝',
+    title:    'Registra un gasto',
+    desc:     'Pulsa este botón para añadir un gasto o ingreso. Elige quién pagó, entre quiénes se divide y la categoría. El modo "Gasto Común" es para el bote del piso.',
   },
   {
-    route: '/liquidacion',
+    route:    '/liquidacion',
     selector: '[data-tutorial="optimal-payments"]',
-    emoji: '⚖️',
-    title: 'Saldar deudas',
-    desc: 'El algoritmo calcula los pagos mínimos para saldar todas las deudas. Pulsa "He pagado" para notificar al acreedor — él confirmará y la deuda desaparecerá.',
+    emoji:    '⚖️',
+    title:    'Saldar deudas',
+    desc:     'El algoritmo calcula los pagos mínimos para saldar todas las deudas. Añade el importe como ingreso y el saldo se ajusta automáticamente.',
   },
   {
-    route: '/estadisticas',
+    route:    '/estadisticas',
     selector: '[data-tutorial="view-toggle"]',
-    emoji: '📊',
-    title: 'Mis datos vs Del grupo',
-    desc: 'Alterna entre ver tu parte proporcional de los gastos o los datos del grupo completo. Los gráficos y totales se adaptan al instante.',
+    emoji:    '📊',
+    title:    'Mis datos vs Del grupo',
+    desc:     'Alterna entre ver tu parte proporcional de los gastos o los datos del grupo completo. Los gráficos y totales se adaptan al instante.',
   },
   {
-    route: '/',
+    route:    '/',
     selector: null,
-    emoji: '🎉',
-    title: '¡Ya lo tienes todo!',
-    desc: 'Ahora conoces lo esencial. Empieza añadiendo tu primer gasto desde la pestaña Transacciones.',
+    emoji:    '🎉',
+    title:    '¡Ya lo tienes todo!',
+    desc:     'Ahora conoces lo esencial. Empieza añadiendo tu primer gasto desde la pestaña Transacciones.',
   },
 ]
 
+/** Flecha SVG animada que señala al elemento enfocado */
+function TutorialArrow({ visible }) {
+  const pathRef = useRef(null)
+  const drawn   = useRef(false)
+
+  useEffect(() => {
+    if (!visible || !pathRef.current) return
+    drawn.current = false
+    const drawable = svg.createDrawable(pathRef.current)
+    animate(drawable, {
+      draw:     ['0 0', '0 1'],
+      duration: 500,
+      easing:   'easeInOutQuart',
+    })
+  }, [visible])
+
+  if (!visible) return null
+  return (
+    <svg
+      width="32" height="32" viewBox="0 0 32 32"
+      fill="none"
+      style={{ position: 'absolute', bottom: -34, left: '50%', transform: 'translateX(-50%)' }}
+    >
+      <path
+        ref={pathRef}
+        d="M 16 2 L 16 22 M 8 16 L 16 26 L 24 16"
+        stroke="#3b82f6"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 export default function TutorialOverlay({ onDone }) {
-  const navigate    = useNavigate()
-  const [step, setStep]           = useState(0)
-  const [targetRect, setTargetRect] = useState(null)
+  const navigate   = useNavigate()
+  const [step, setStep]               = useState(0)
+  const [targetRect, setTargetRect]   = useState(null)
+  const ringRef = useRef(null)
 
   const current = STEPS[step]
   const isFirst = step === 0
   const isLast  = step === STEPS.length - 1
 
-  // Mide el elemento objetivo y actualiza targetRect
   const measure = useCallback(() => {
     if (!current.selector) { setTargetRect(null); return }
     const el = document.querySelector(current.selector)
@@ -75,13 +111,11 @@ export default function TutorialOverlay({ onDone }) {
     })
   }, [current.selector])
 
-  // Al cambiar de paso: navega y programa la medición
   useEffect(() => {
     setTargetRect(null)
     navigate(current.route)
   }, [step]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Busca el elemento después de que la ruta/render se asiente
   useEffect(() => {
     if (!current.selector) return
     const t = setTimeout(() => {
@@ -94,7 +128,7 @@ export default function TutorialOverlay({ onDone }) {
     return () => clearTimeout(t)
   }, [step, current.selector, measure])
 
-  // Re-mide al hacer scroll o resize
+  // Re-mide al scroll/resize
   useEffect(() => {
     window.addEventListener('scroll', measure, true)
     window.addEventListener('resize', measure)
@@ -104,7 +138,17 @@ export default function TutorialOverlay({ onDone }) {
     }
   }, [measure])
 
-  // Calcula posición del tooltip
+  // Anima el anillo de resaltado con spring cuando aparece o se mueve
+  useEffect(() => {
+    if (!ringRef.current || !targetRect) return
+    animate(ringRef.current, {
+      scale:   [0.88, 1],
+      opacity: [0, 1],
+      duration: 400,
+      easing:  'easeOutBack',
+    })
+  }, [targetRect])
+
   const tooltipPos = (() => {
     if (!targetRect) {
       return { top: '50%', left: '50%', transform: 'translate(-50%,-50%)' }
@@ -128,7 +172,7 @@ export default function TutorialOverlay({ onDone }) {
 
   return (
     <>
-      {/* Overlay oscuro: SVG con agujero recortado en el elemento */}
+      {/* Overlay oscuro con agujero */}
       <svg
         style={{ position: 'fixed', inset: 0, zIndex: 9990, pointerEvents: 'all', width: '100%', height: '100%' }}
         aria-hidden="true"
@@ -146,41 +190,54 @@ export default function TutorialOverlay({ onDone }) {
             )}
           </mask>
         </defs>
-        <rect width="100%" height="100%" fill="rgba(0,0,0,0.7)" mask="url(#tut-mask)"/>
+        <rect width="100%" height="100%" fill="rgba(0,0,0,0.72)" mask="url(#tut-mask)"/>
       </svg>
 
-      {/* Anillo de resaltado alrededor del elemento */}
+      {/* Anillo de resaltado con spring */}
       {targetRect && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
+        <div
+          ref={ringRef}
           style={{
-            position: 'fixed',
-            top:    targetRect.top,
-            left:   targetRect.left,
-            width:  targetRect.width,
-            height: targetRect.height,
-            zIndex: 9991,
+            position:     'fixed',
+            top:          targetRect.top,
+            left:         targetRect.left,
+            width:        targetRect.width,
+            height:       targetRect.height,
+            zIndex:       9991,
             borderRadius: 14,
-            border: '2px solid rgba(59,130,246,0.9)',
-            pointerEvents: 'none',
-            boxShadow: '0 0 0 4px rgba(59,130,246,0.15)',
+            border:       '2px solid rgba(59,130,246,0.9)',
+            pointerEvents:'none',
+            boxShadow:    '0 0 0 4px rgba(59,130,246,0.15), 0 0 24px rgba(59,130,246,0.2)',
           }}
         />
       )}
 
       {/* Tooltip */}
-      <div style={{ position: 'fixed', zIndex: 9995, ...( targetRect ? { top: tooltipPos.top, left: tooltipPos.left } : { top: '50%', left: '50%', transform: 'translate(-50%,-50%)' }) }}>
+      <div style={{
+        position: 'fixed',
+        zIndex: 9995,
+        ...(targetRect
+          ? { top: tooltipPos.top, left: tooltipPos.left }
+          : { top: '50%', left: '50%', transform: 'translate(-50%,-50%)' }
+        ),
+      }}>
         <AnimatePresence mode="wait">
           <motion.div
             key={step}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.2 }}
-            style={{ width: TOOLTIP_W }}
+            initial={{ opacity: 0, scale: 0.88, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.92, y: -6 }}
+            transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+            style={{ width: TOOLTIP_W, position: 'relative' }}
             className="bg-slate-900 border border-slate-700/70 rounded-2xl p-5 shadow-2xl"
           >
+            {/* Flecha indicadora (solo cuando hay elemento enfocado) */}
+            {targetRect && (
+              <div style={{ position: 'absolute', bottom: -38, left: 0, right: 0, display: 'flex', justifyContent: 'center' }}>
+                <TutorialArrow visible={!!targetRect}/>
+              </div>
+            )}
+
             {/* Saltar */}
             <button
               onClick={onDone}

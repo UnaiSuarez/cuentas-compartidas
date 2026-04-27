@@ -35,13 +35,20 @@ export default function AvatarScene({ users, balances, activeUser }) {
             <motion.div
               key={user.id}
               className="flex flex-col items-center gap-2 cursor-default"
-              animate={{ y: [0, state === 'dead' ? 4 : -10, 0] }}
-              transition={{
-                duration:  state === 'dead' ? 4 : 2.5 + i * 0.3,
-                delay:     i * 0.4,
-                repeat:    Infinity,
-                ease:      'easeInOut',
-              }}
+              animate={
+                state === 'happy'
+                  ? { y: [0, -14, -4, -12, 0] }
+                  : state === 'dead'
+                  ? { x: [0, -6, 6, -4, 4, -2, 2, 0], y: 2 }
+                  : { y: [0, -6, 0] }
+              }
+              transition={
+                state === 'happy'
+                  ? { duration: 0.9, delay: i * 0.15, repeat: Infinity, ease: 'easeInOut' }
+                  : state === 'dead'
+                  ? { duration: 1.4, delay: i * 0.25, repeat: Infinity, ease: 'easeInOut', repeatDelay: 1.2 }
+                  : { duration: 2.5 + i * 0.3, delay: i * 0.4, repeat: Infinity, ease: 'easeInOut' }
+              }
             >
               <div className={`relative rounded-full p-1 transition-all
                               ${isActive
@@ -53,6 +60,7 @@ export default function AvatarScene({ users, balances, activeUser }) {
                                 : state === 'dead'  ? 'bg-red-400'
                                 : 'bg-blue-400'}`}/>
                 <AvatarComp
+                  key={state}
                   state={state}
                   color={color}
                   size={state === 'dead' ? 70 : 80}

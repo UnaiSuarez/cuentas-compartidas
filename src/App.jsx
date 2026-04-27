@@ -7,6 +7,7 @@ import Navbar           from './components/Common/Navbar'
 import Dashboard        from './components/Dashboard/Dashboard'
 import Transactions     from './components/Transactions/TransactionList'
 import TutorialOverlay  from './components/Tutorial/TutorialOverlay'
+import SplashScreen     from './components/Common/SplashScreen'
 
 const Settlement = lazy(() => import('./components/Settlement/SettlementPage'))
 const Statistics = lazy(() => import('./components/Statistics/StatisticsPage'))
@@ -38,15 +39,9 @@ export default function App() {
     setShowTutorial(false)
   }
 
+  // Splash animada mientras carga Firebase
   if (loading || firebaseUser === undefined) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-4xl mb-4">💰</div>
-          <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"/>
-        </div>
-      </div>
-    )
+    return <SplashScreen />
   }
 
   // Sin cuenta o perfil incompleto

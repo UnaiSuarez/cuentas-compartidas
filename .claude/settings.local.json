@@ -22,7 +22,10 @@
       "Bash(node *)",
       "Bash(git -C /e/espaciSeguroClaude/cuentas-compartidas add docs/MANUAL_DE_USUARIO.pdf docs/DOCUMENTO_TECNICO.pdf docs/gen-manual.mjs docs/gen-tecnico.mjs)",
       "Bash(git -C /e/espaciSeguroClaude/cuentas-compartidas rm --cached docs/generate-pdfs-node.mjs)",
-      "Bash(git -C /e/espaciSeguroClaude/cuentas-compartidas commit -m 'docs: regenerar PDFs completos y detallados \\(46-60 KB\\) *)"
+      "Bash(git -C /e/espaciSeguroClaude/cuentas-compartidas commit -m 'docs: regenerar PDFs completos y detallados \\(46-60 KB\\) *)",
+      "Bash(git *)",
+      "WebFetch(domain:animejs.com)",
+      "Bash(npm run *)"
     ]
   }
 }

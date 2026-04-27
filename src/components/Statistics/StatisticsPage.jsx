@@ -1,18 +1,75 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line,
 } from 'recharts'
-import { useApp }          from '../../context/AppContext'
-import { formatCurrency }  from '../../utils/formatters'
-import { format }          from 'date-fns'
-import { es }              from 'date-fns/locale'
+import { animate, stagger }    from 'animejs'
+import { useApp }              from '../../context/AppContext'
+import { formatCurrency }      from '../../utils/formatters'
+import { revealOnScroll }      from '../../utils/animeHelpers'
+import { format }              from 'date-fns'
+import { es }                  from 'date-fns/locale'
 
 const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6']
 
+/** Encabezado que se revela palabra a palabra */
+function AnimatedHeading({ children, className }) {
+  const ref  = useRef(null)
+  const words = String(children).split(' ')
+
+  useEffect(() => {
+    if (!ref.current) return
+    const spans = ref.current.querySelectorAll('.word')
+    animate(spans, {
+      opacity:    [0, 1],
+      translateY: [8, 0],
+      duration:   350,
+      delay:      stagger(70),
+      easing:     'easeOutExpo',
+    })
+  }, [])
+
+  return (
+    <h2 ref={ref} className={className}>
+      {words.map((w, i) => (
+        <span key={i} className="word inline-block mr-1" style={{ opacity: 0 }}>{w}</span>
+      ))}
+    </h2>
+  )
+}
+
 export default function StatisticsPage() {
   const { transactions, groupMembers, categories, userProfile } = useApp()
-  const [view, setView] = useState('personal') // 'personal' | 'group'
+  const [view, setView] = useState('personal')
+
+  // Refs para scroll reveal
+  const totalsRef    = useRef(null)
+  const catRef       = useRef(null)
+  const memberRef    = useRef(null)
+  const monthlyRef   = useRef(null)
+
+  useEffect(() => {
+    const cleanups = [
+      revealOnScroll(totalsRef.current,  { delay: 0   }),
+      revealOnScroll(catRef.current,     { delay: 80  }),
+      revealOnScroll(memberRef.current,  { delay: 120 }),
+      revealOnScroll(monthlyRef.current, { delay: 160 }),
+    ].filter(Boolean)
+    return () => cleanups.forEach(fn => fn())
+  }, [])
+
+  // Animación del toggle de vista
+  const toggleRef = useRef(null)
+  function handleViewChange(v) {
+    if (toggleRef.current) {
+      animate(toggleRef.current, {
+        scale:    [1, 0.97, 1],
+        duration: 200,
+        easing:   'easeOutSine',
+      })
+    }
+    setView(v)
+  }
 
   const filteredTx = useMemo(() => {
     if (view === 'group') return transactions
@@ -20,7 +77,6 @@ export default function StatisticsPage() {
     if (!uid) return []
     return transactions.filter(tx => {
       if (tx.type === 'income') return tx.paidBy === uid
-      // Para gastos: participó en el reparto o lo pagó
       return (tx.splitAmong || []).includes(uid) || tx.paidBy === uid
     })
   }, [transactions, view, userProfile])
@@ -100,11 +156,18 @@ export default function StatisticsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-white">Estadísticas</h2>
-        {/* Toggle vista */}
-        <div data-tutorial="view-toggle" className="flex gap-1 bg-slate-800/60 rounded-xl p-1">
+        <AnimatedHeading className="text-xl font-bold text-white">
+          Estadísticas
+        </AnimatedHeading>
+
+        {/* Toggle vista con animación */}
+        <div
+          ref={toggleRef}
+          data-tutorial="view-toggle"
+          className="flex gap-1 bg-slate-800/60 rounded-xl p-1"
+        >
           <button
-            onClick={() => setView('personal')}
+            onClick={() => handleViewChange('personal')}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
               view === 'personal' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
             }`}
@@ -112,7 +175,7 @@ export default function StatisticsPage() {
             Mis datos
           </button>
           <button
-            onClick={() => setView('group')}
+            onClick={() => handleViewChange('group')}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
               view === 'group' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
             }`}
@@ -122,8 +185,8 @@ export default function StatisticsPage() {
         </div>
       </div>
 
-      {/* Totales rápidos */}
-      <div className="grid grid-cols-2 gap-3">
+      {/* Totales */}
+      <div ref={totalsRef} className="grid grid-cols-2 gap-3" style={{ opacity: 0 }}>
         <div className="glass rounded-2xl p-4">
           <p className="text-xs text-slate-400 mb-1">
             {view === 'personal' ? 'Mi parte de gastos' : 'Total Gastos'}
@@ -147,16 +210,28 @@ export default function StatisticsPage() {
 
       {/* Gastos por categoría */}
       {byCategory.length > 0 && (
-        <div className="glass rounded-2xl p-5">
+        <div ref={catRef} className="glass rounded-2xl p-5" style={{ opacity: 0 }}>
           <p className="text-slate-400 text-xs uppercase tracking-wider mb-4">Por categoría</p>
           <div className="flex flex-col md:flex-row items-center gap-4">
             <div className="w-full md:w-64 h-52">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={byCategory} cx="50%" cy="50%" innerRadius={50} outerRadius={90} paddingAngle={2} dataKey="value">
+                  <Pie
+                    data={byCategory}
+                    cx="50%" cy="50%"
+                    innerRadius={50} outerRadius={90}
+                    paddingAngle={2}
+                    dataKey="value"
+                    isAnimationActive
+                    animationBegin={200}
+                    animationDuration={800}
+                  >
                     {byCategory.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]}/>)}
                   </Pie>
-                  <Tooltip formatter={(v) => formatCurrency(v)} contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}/>
+                  <Tooltip
+                    formatter={(v) => formatCurrency(v)}
+                    contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -173,9 +248,9 @@ export default function StatisticsPage() {
         </div>
       )}
 
-      {/* Gastos por persona (solo vista grupo) */}
+      {/* Gastos por persona (grupo) */}
       {view === 'group' && byMember.some(m => m.total > 0) && (
-        <div className="glass rounded-2xl p-5">
+        <div ref={memberRef} className="glass rounded-2xl p-5" style={{ opacity: 0 }}>
           <p className="text-slate-400 text-xs uppercase tracking-wider mb-4">Gastos pagados por persona</p>
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
@@ -183,8 +258,11 @@ export default function StatisticsPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b"/>
                 <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 12 }}/>
                 <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} tickFormatter={v => `€${v}`}/>
-                <Tooltip formatter={(v) => formatCurrency(v)} contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}/>
-                <Bar dataKey="total" radius={[6, 6, 0, 0]}>
+                <Tooltip
+                  formatter={(v) => formatCurrency(v)}
+                  contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
+                />
+                <Bar dataKey="total" radius={[6, 6, 0, 0]} isAnimationActive animationBegin={300} animationDuration={900}>
                   {byMember.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]}/>)}
                 </Bar>
               </BarChart>
@@ -193,9 +271,9 @@ export default function StatisticsPage() {
         </div>
       )}
 
-      {/* Evolución mensual */}
+      {/* Evolución mensual con animación de línea */}
       {monthly.length > 1 && (
-        <div className="glass rounded-2xl p-5">
+        <div ref={monthlyRef} className="glass rounded-2xl p-5" style={{ opacity: 0 }}>
           <p className="text-slate-400 text-xs uppercase tracking-wider mb-4">Evolución mensual</p>
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
@@ -203,8 +281,22 @@ export default function StatisticsPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b"/>
                 <XAxis dataKey="mes" tick={{ fill: '#94a3b8', fontSize: 12 }}/>
                 <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} tickFormatter={v => `€${v}`}/>
-                <Tooltip formatter={(v) => formatCurrency(v)} contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}/>
-                <Line type="monotone" dataKey="total" stroke="#2563eb" strokeWidth={2.5} dot={{ fill: '#2563eb', r: 4 }} activeDot={{ r: 6 }}/>
+                <Tooltip
+                  formatter={(v) => formatCurrency(v)}
+                  contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="total"
+                  stroke="#2563eb"
+                  strokeWidth={2.5}
+                  dot={{ fill: '#2563eb', r: 4 }}
+                  activeDot={{ r: 6 }}
+                  isAnimationActive
+                  animationBegin={200}
+                  animationDuration={1000}
+                  animationEasing="ease-in-out"
+                />
               </LineChart>
             </ResponsiveContainer>
           </div>
