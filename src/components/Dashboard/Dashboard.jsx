@@ -126,15 +126,15 @@ export default function Dashboard() {
             ref={balanceRef}
             className={`text-5xl font-bold tabular-nums ${amountColor(myAvailableBalance)}`}
           />
-          {myPendingReceivable > 0.01 && (
-            <p className="text-amber-400 text-xs mt-2 space-x-1">
-              <span>+ {formatCurrency(myPendingReceivable)} pendiente de cobro</span>
+          {pendingFrom.length > 0 && (
+            <div className="mt-2 space-y-0.5">
               {pendingFrom.map((p, i) => (
-                <span key={i}>
-                  {i === 0 ? 'de' : 'y'} <span className="font-medium">{getMemberName(p.de)}</span>
-                </span>
+                <p key={i} className="text-amber-400 text-xs">
+                  +{formatCurrency(p.monto)} pendiente de cobro
+                  de <span className="font-semibold">{getMemberName(p.de)}</span>
+                </p>
               ))}
-            </p>
+            </div>
           )}
           <p className="text-slate-500 text-xs mt-1.5">
             {myAvailableBalance > 0.01

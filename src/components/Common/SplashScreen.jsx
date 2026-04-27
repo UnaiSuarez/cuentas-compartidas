@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { animate, stagger, svg } from 'animejs'
+import { animate, stagger, svg, engine } from 'animejs'
 import AppLogo from '../../assets/AppLogo'
 
 export default function SplashScreen() {
@@ -9,6 +9,9 @@ export default function SplashScreen() {
   useEffect(() => {
     const wrap = wrapRef.current
     if (!wrap) return
+
+    // Ralentización cinématica solo durante el splash
+    engine.speed = 0.82
 
     // Select only stroked path elements (animatable with createDrawable)
     const paths     = Array.from(wrap.querySelectorAll('path'))
@@ -40,6 +43,8 @@ export default function SplashScreen() {
       delay:      900,
       easing:     'easeOutExpo',
     })
+
+    return () => { engine.speed = 1 }
   }, [])
 
   return (

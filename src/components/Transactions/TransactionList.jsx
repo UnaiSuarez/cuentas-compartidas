@@ -2,7 +2,8 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence }     from 'framer-motion'
 import {
   Plus, Search, Pencil, Trash2,
-  TrendingUp, TrendingDown, X, Download, ChevronDown,
+  TrendingUp, TrendingDown, Landmark, X, Download,
+  ChevronDown, ArrowDownUp, Calendar,
 } from 'lucide-react'
 import { useApp }                      from '../../context/AppContext'
 import { useTransactions }             from '../../hooks/useTransactions'
@@ -44,23 +45,39 @@ function AnimatedButton({ onClick, className, children, 'data-tutorial': dataTut
   )
 }
 
+/** Extrae timestamp comparable de una transacción (createdAt > date como fallback) */
+function getTxTimestamp(tx) {
+  if (tx.createdAt?.toDate) return tx.createdAt.toDate().getTime()
+  if (tx.createdAt)         return new Date(tx.createdAt).getTime()
+  if (tx.date?.toDate)      return tx.date.toDate().getTime()
+  return new Date(tx.date).getTime()
+}
+
+/** Formatea Date → "YYYY-MM-DD" para input[type=date] */
+function toInputDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 export default function TransactionList() {
   const { transactions, groupMembers, categories, userProfile } = useApp()
   const { deleteTransaction } = useTransactions()
 
-  const [showForm,   setShowForm]   = useState(false)
-  const [editData,   setEditData]   = useState(null)
-  const [search,     setSearch]     = useState('')
-  const [dateFilter, setDateFilter] = useState('all')
-  const [typeFilter, setTypeFilter] = useState('all')
-  const [catFilter,  setCatFilter]  = useState('')
-  const [deleting,   setDeleting]   = useState(null)
-  const [showExport, setShowExport] = useState(false)
+  const [showForm,     setShowForm]     = useState(false)
+  const [editData,     setEditData]     = useState(null)
+  const [search,       setSearch]       = useState('')
+  const [dateFilter,   setDateFilter]   = useState('all')
+  const [typeFilter,   setTypeFilter]   = useState('all')
+  const [catFilter,    setCatFilter]    = useState('')
+  const [sortOrder,    setSortOrder]    = useState('newest')  // 'newest' | 'oldest'
+  const [specificDate, setSpecificDate] = useState('')        // 'YYYY-MM-DD' | ''
+  const [deleting,     setDeleting]     = useState(null)
+  const [showExport,   setShowExport]   = useState(false)
 
   const listRef = useRef(null)
 
   const getMemberName = id => groupMembers.find(m => m.id === id)?.name || '—'
 
+  // ── Filtrado
   const filtered = useMemo(() => {
     const now = new Date()
     const sod = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -78,26 +95,52 @@ export default function TransactionList() {
       }
       if (typeFilter !== 'all' && tx.type !== typeFilter) return false
       if (catFilter && tx.category !== catFilter) return false
+
+      const txDate = tx.date?.toDate ? tx.date.toDate() : new Date(tx.date)
+
+      // Filtro por fecha concreta (tiene prioridad sobre el rango)
+      if (specificDate) {
+        return toInputDate(txDate) === specificDate
+      }
+
       if (dateFilter !== 'all') {
-        const txDate = tx.date?.toDate ? tx.date.toDate() : new Date(tx.date)
         if (dateFilter === 'today' && txDate < sod) return false
         if (dateFilter === 'week'  && txDate < sow) return false
         if (dateFilter === 'month' && txDate < som) return false
       }
       return true
     })
-  }, [transactions, search, dateFilter, typeFilter, catFilter, groupMembers])
+  }, [transactions, search, dateFilter, typeFilter, catFilter, specificDate, groupMembers])
 
-  // Stagger reveal cuando cambia el filtro o carga la lista
+  // ── Ordenación por createdAt (o date como fallback)
+  const sorted = useMemo(() => (
+    [...filtered].sort((a, b) =>
+      sortOrder === 'newest'
+        ? getTxTimestamp(b) - getTxTimestamp(a)
+        : getTxTimestamp(a) - getTxTimestamp(b)
+    )
+  ), [filtered, sortOrder])
+
+  // ── Stagger al cambiar filtros
   useEffect(() => {
     if (!listRef.current) return
     const items = listRef.current.querySelectorAll('[data-tx-item]')
     if (!items.length) return
     staggerReveal(items, { duration: 350, staggerMs: 30, translateY: 10 })
-  }, [filtered.length, search, dateFilter, typeFilter, catFilter])
+  }, [sorted.length, search, dateFilter, typeFilter, catFilter, specificDate, sortOrder])
 
-  function openEdit(tx) { setEditData(tx);   setShowForm(true) }
-  function openNew()    { setEditData(null);  setShowForm(true) }
+  function openEdit(tx) { setEditData(tx);  setShowForm(true) }
+  function openNew()    { setEditData(null); setShowForm(true) }
+
+  function handleDateFilterClick(value) {
+    setDateFilter(value)
+    setSpecificDate('')  // limpia fecha concreta al usar un rango
+  }
+
+  function handleSpecificDate(v) {
+    setSpecificDate(v)
+    if (v) setDateFilter('all')  // limpia rango al usar fecha concreta
+  }
 
   async function handleDelete(id) {
     if (!confirm('¿Eliminar esta transacción? No se puede deshacer.')) return
@@ -107,13 +150,13 @@ export default function TransactionList() {
   }
 
   function prepareExportData() {
-    return filtered.map(tx => ({
-      fecha:      tx.date?.toDate ? tx.date.toDate() : new Date(tx.date),
-      tipo:       tx.type === 'income' ? 'Ingreso' : 'Gasto',
-      monto:      tx.amount,
-      categoria:  tx.categoryLabel || tx.category || '—',
+    return sorted.map(tx => ({
+      fecha:       tx.date?.toDate ? tx.date.toDate() : new Date(tx.date),
+      tipo:        tx.type === 'income' ? 'Ingreso' : 'Gasto',
+      monto:       tx.amount,
+      categoria:   tx.categoryLabel || tx.category || '—',
       descripcion: tx.description || '—',
-      pagado_por: getMemberName(tx.paidBy),
+      pagado_por:  getMemberName(tx.paidBy),
     }))
   }
 
@@ -127,7 +170,7 @@ export default function TransactionList() {
 
   return (
     <div className="space-y-4">
-      {/* Cabecera */}
+      {/* ── Cabecera */}
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-white">Transacciones</h2>
         <div className="flex gap-2">
@@ -163,7 +206,7 @@ export default function TransactionList() {
             )}
           </div>
 
-          {/* Nueva transacción con partículas */}
+          {/* Nueva transacción */}
           <AnimatedButton
             data-tutorial="new-transaction"
             onClick={openNew}
@@ -177,7 +220,7 @@ export default function TransactionList() {
         </div>
       </div>
 
-      {/* Formulario */}
+      {/* ── Formulario */}
       <AnimatePresence>
         {showForm && (
           <TransactionForm
@@ -187,7 +230,7 @@ export default function TransactionList() {
         )}
       </AnimatePresence>
 
-      {/* Búsqueda */}
+      {/* ── Búsqueda */}
       <div className="relative">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
         <input
@@ -208,11 +251,47 @@ export default function TransactionList() {
         )}
       </div>
 
-      {/* Filtros */}
+      {/* ── Controles: ordenación + fecha concreta */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {/* Toggle orden */}
+        <button
+          onClick={() => setSortOrder(o => o === 'newest' ? 'oldest' : 'newest')}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
+                     bg-slate-800/60 border border-slate-700/40 text-slate-300 hover:text-white
+                     transition-all"
+          title={sortOrder === 'newest' ? 'Más recientes primero' : 'Más antiguas primero'}
+        >
+          <ArrowDownUp size={13}/>
+          {sortOrder === 'newest' ? 'Más recientes' : 'Más antiguas'}
+        </button>
+
+        {/* Fecha concreta */}
+        <div className="relative flex items-center">
+          <Calendar size={13} className="absolute left-2.5 text-slate-400 pointer-events-none"/>
+          <input
+            type="date"
+            value={specificDate}
+            onChange={e => handleSpecificDate(e.target.value)}
+            className="bg-slate-800/60 border border-slate-700/40 rounded-lg pl-8 pr-2 py-1.5
+                       text-xs text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/40
+                       [color-scheme:dark]"
+          />
+          {specificDate && (
+            <button
+              onClick={() => setSpecificDate('')}
+              className="absolute right-1.5 text-slate-500 hover:text-white"
+            >
+              <X size={12}/>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Filtros de tipo y rango de fecha */}
       <div className="flex gap-2 flex-wrap">
         {[
-          { value: 'all',     label: 'Todo'       },
-          { value: 'expense', label: '📉 Gastos'  },
+          { value: 'all',     label: 'Todo'        },
+          { value: 'expense', label: '📉 Gastos'   },
           { value: 'income',  label: '📈 Ingresos' },
         ].map(t => (
           <button
@@ -230,9 +309,9 @@ export default function TransactionList() {
         {DATE_FILTERS.map(f => (
           <button
             key={f.value}
-            onClick={() => setDateFilter(f.value)}
+            onClick={() => handleDateFilterClick(f.value)}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all
-                       ${dateFilter === f.value
+                       ${dateFilter === f.value && !specificDate
                          ? 'bg-blue-600/30 text-blue-300 border border-blue-500/40'
                          : 'bg-slate-800/60 text-slate-400 border border-slate-700/40 hover:text-white'
                        }`}
@@ -243,47 +322,52 @@ export default function TransactionList() {
       </div>
 
       <p className="text-xs text-slate-500">
-        {filtered.length} resultado{filtered.length !== 1 ? 's' : ''}
+        {sorted.length} resultado{sorted.length !== 1 ? 's' : ''}
       </p>
 
-      {/* Lista */}
-      {filtered.length === 0 ? (
+      {/* ── Lista */}
+      {sorted.length === 0 ? (
         <div className="glass rounded-2xl p-12 text-center">
           <p className="text-4xl mb-3">🔍</p>
           <p className="text-slate-400">No hay transacciones que coincidan.</p>
         </div>
       ) : (
         <div ref={listRef} className="space-y-2">
-          {filtered.map((tx) => {
+          {sorted.map((tx) => {
             const isIncome = tx.type === 'income'
+            const isCommon = tx.paidBy === 'common' || tx.paymentMode === 'common'
             const txDate   = tx.date?.toDate ? tx.date.toDate() : new Date(tx.date)
+
+            const ItemIcon   = isCommon ? Landmark : isIncome ? TrendingUp : TrendingDown
+            const iconBg     = isCommon ? 'bg-blue-500/15'    : isIncome ? 'bg-emerald-500/15' : 'bg-red-500/15'
+            const iconColor  = isCommon ? 'text-blue-400'     : isIncome ? 'text-emerald-400'  : 'text-red-400'
+            const borderLeft = isCommon ? 'border-l-blue-500/50' : isIncome ? 'border-l-emerald-500/50' : 'border-l-red-500/50'
+            const amountColor = isCommon ? 'text-blue-400'   : isIncome ? 'text-emerald-400'  : 'text-red-400'
+
             return (
               <div
                 key={tx.id}
                 data-tx-item
-                className="glass rounded-xl p-4 flex items-center gap-3
-                           hover:bg-slate-800/60 transition-colors cursor-default"
+                className={`glass rounded-xl p-4 flex items-center gap-3
+                           hover:bg-slate-800/60 transition-colors cursor-default
+                           border-l-2 ${borderLeft}`}
               >
                 {/* Icono */}
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0
-                                ${isIncome ? 'bg-emerald-500/15' : 'bg-red-500/15'}`}>
-                  {isIncome
-                    ? <TrendingUp   size={18} className="text-emerald-400"/>
-                    : <TrendingDown size={18} className="text-red-400"/>
-                  }
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${iconBg}`}>
+                  <ItemIcon size={18} className={iconColor}/>
                 </div>
 
                 {/* Info */}
                 <div className="flex-1 min-w-0">
                   <p className="text-white text-sm font-medium truncate">
-                    {tx.description || tx.categoryLabel || (isIncome ? 'Ingreso' : 'Gasto')}
+                    {tx.description || tx.categoryLabel || (isIncome ? 'Ingreso' : isCommon ? 'Gasto común' : 'Gasto')}
                   </p>
                   <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                     {tx.categoryLabel && (
                       <span className="text-xs text-slate-500">{tx.categoryLabel}</span>
                     )}
                     <span className="text-xs text-slate-700">•</span>
-                    {tx.paidBy === 'common' || tx.paymentMode === 'common'
+                    {isCommon
                       ? <span className="text-xs px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-400 font-medium">Fondo común</span>
                       : <span className="text-xs text-slate-500">{getMemberName(tx.paidBy)}</span>
                     }
@@ -299,8 +383,7 @@ export default function TransactionList() {
 
                 {/* Monto */}
                 <div className="text-right shrink-0">
-                  <p className={`font-bold tabular-nums text-sm
-                                ${isIncome ? 'text-emerald-400' : 'text-red-400'}`}>
+                  <p className={`font-bold tabular-nums text-sm ${amountColor}`}>
                     {isIncome ? '+' : '-'}{formatCurrency(tx.amount)}
                   </p>
                 </div>
