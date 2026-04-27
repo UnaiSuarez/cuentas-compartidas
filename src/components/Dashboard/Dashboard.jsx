@@ -3,6 +3,7 @@
  * Muestra: avatares animados, saldo personal, tarjetas de resumen y pagos pendientes.
  */
 
+import { useMemo }        from 'react'
 import { motion }         from 'framer-motion'
 import { TrendingUp, TrendingDown, Wallet, Users } from 'lucide-react'
 import { useApp }         from '../../context/AppContext'
@@ -16,8 +17,20 @@ export default function Dashboard() {
   const { userProfile, groupMembers, loading } = useApp()
   const { summary } = useSettlement()
 
-  // Saldo del usuario autenticado
+  const getMemberName = id => groupMembers.find(m => m.id === id)?.name || '?'
+
+  // Saldo total del usuario (incluye lo que le deben pero aún no han pagado)
   const myBalance = userProfile ? (summary.balances[userProfile.id] ?? 0) : null
+
+  // Pagos óptimos donde el usuario es el acreedor (le deben pagar)
+  const pendingFrom = useMemo(() => {
+    if (!userProfile) return []
+    return summary.pagosOptimos.filter(p => p.a === userProfile.id)
+  }, [summary.pagosOptimos, userProfile])
+
+  const myPendingReceivable = pendingFrom.reduce((s, p) => s + p.monto, 0)
+  // Dinero realmente disponible (descontando lo que otros aún no han pagado)
+  const myAvailableBalance = myBalance !== null ? myBalance - myPendingReceivable : null
 
   const cards = [
     {
@@ -73,10 +86,20 @@ export default function Dashboard() {
           className="glass rounded-2xl p-6 text-center"
         >
           <p className="text-slate-400 text-sm mb-1">Tu saldo, {userProfile.name}</p>
-          <p className={`text-5xl font-bold tabular-nums ${amountColor(myBalance)}`}>
-            {formatCurrency(myBalance, true)}
+          <p className={`text-5xl font-bold tabular-nums ${amountColor(myAvailableBalance)}`}>
+            {formatCurrency(myAvailableBalance, true)}
           </p>
-          <p className="text-slate-500 text-xs mt-2">
+          {myPendingReceivable > 0.01 && (
+            <p className="text-amber-400 text-xs mt-2 space-x-1">
+              <span>+ {formatCurrency(myPendingReceivable)} pendiente de cobro</span>
+              {pendingFrom.map((p, i) => (
+                <span key={i}>
+                  {i === 0 ? 'de' : 'y'} <span className="font-medium">{getMemberName(p.de)}</span>
+                </span>
+              ))}
+            </p>
+          )}
+          <p className="text-slate-500 text-xs mt-1.5">
             {myBalance > 0
               ? 'Te deben dinero ✅'
               : myBalance < 0

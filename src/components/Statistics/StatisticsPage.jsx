@@ -27,17 +27,23 @@ export default function StatisticsPage() {
 
   const byCategory = useMemo(() => {
     const map = {}
+    const uid = userProfile?.id
     filteredTx
       .filter(tx => tx.type === 'expense' && !tx.isSettlement)
       .forEach(tx => {
         const label = tx.categoryLabel || 'Otros'
-        map[label] = (map[label] || 0) + tx.amount
+        let amount = tx.amount
+        if (view === 'personal' && uid) {
+          const n = (tx.splitAmong || []).length || 1
+          amount = (tx.splitAmong || []).includes(uid) ? tx.amount / n : 0
+        }
+        map[label] = (map[label] || 0) + amount
       })
     return Object.entries(map)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 7)
-  }, [filteredTx])
+  }, [filteredTx, view, userProfile])
 
   const byMember = useMemo(() => {
     if (view === 'personal') return []
@@ -51,15 +57,21 @@ export default function StatisticsPage() {
 
   const monthly = useMemo(() => {
     const months = {}
+    const uid = userProfile?.id
     filteredTx
       .filter(tx => tx.type === 'expense' && !tx.isSettlement)
       .forEach(tx => {
         const d   = tx.date?.toDate ? tx.date.toDate() : new Date(tx.date)
         const key = format(d, 'MMM yy', { locale: es })
-        months[key] = (months[key] || 0) + tx.amount
+        let amount = tx.amount
+        if (view === 'personal' && uid) {
+          const n = (tx.splitAmong || []).length || 1
+          amount = (tx.splitAmong || []).includes(uid) ? tx.amount / n : 0
+        }
+        months[key] = (months[key] || 0) + amount
       })
     return Object.entries(months).map(([mes, total]) => ({ mes, total })).slice(-6)
-  }, [filteredTx])
+  }, [filteredTx, view, userProfile])
 
   const totalGastos   = filteredTx.filter(tx => tx.type === 'expense' && !tx.isSettlement).reduce((s, tx) => s + tx.amount, 0)
   const totalIngresos = filteredTx.filter(tx => tx.type === 'income'  && !tx.isSettlement).reduce((s, tx) => s + tx.amount, 0)
@@ -114,12 +126,14 @@ export default function StatisticsPage() {
       <div className="grid grid-cols-2 gap-3">
         <div className="glass rounded-2xl p-4">
           <p className="text-xs text-slate-400 mb-1">
-            {view === 'personal' ? 'Mis gastos' : 'Total Gastos'}
+            {view === 'personal' ? 'Mi parte de gastos' : 'Total Gastos'}
           </p>
-          <p className="text-2xl font-bold text-red-400">{formatCurrency(totalGastos)}</p>
-          {view === 'personal' && myExpense !== null && (
+          <p className="text-2xl font-bold text-red-400">
+            {formatCurrency(view === 'personal' && myExpense !== null ? myExpense : totalGastos)}
+          </p>
+          {view === 'personal' && myExpense !== null && totalGastos > myExpense + 0.01 && (
             <p className="text-xs text-slate-500 mt-1">
-              Mi parte: <span className="text-slate-300">{formatCurrency(myExpense)}</span>
+              Total del grupo: <span className="text-slate-400">{formatCurrency(totalGastos)}</span>
             </p>
           )}
         </div>

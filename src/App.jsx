@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react'
+import { Suspense, lazy, useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useApp }       from './context/AppContext'
 import AuthGate         from './components/Auth/AuthGate'
@@ -6,6 +6,7 @@ import RoomSelector     from './components/Auth/RoomSelector'
 import Navbar           from './components/Common/Navbar'
 import Dashboard        from './components/Dashboard/Dashboard'
 import Transactions     from './components/Transactions/TransactionList'
+import TutorialOverlay  from './components/Tutorial/TutorialOverlay'
 
 const Settlement = lazy(() => import('./components/Settlement/SettlementPage'))
 const Statistics = lazy(() => import('./components/Statistics/StatisticsPage'))
@@ -22,6 +23,20 @@ function PageLoader() {
 
 export default function App() {
   const { firebaseUser, userProfile, groupId, loading } = useApp()
+
+  const tutorialKey = userProfile?.id ? `tutorial_seen_${userProfile.id}` : null
+  const [showTutorial, setShowTutorial] = useState(false)
+
+  useEffect(() => {
+    if (tutorialKey && groupId && !localStorage.getItem(tutorialKey)) {
+      setShowTutorial(true)
+    }
+  }, [tutorialKey, groupId])
+
+  function handleTutorialDone() {
+    if (tutorialKey) localStorage.setItem(tutorialKey, '1')
+    setShowTutorial(false)
+  }
 
   if (loading || firebaseUser === undefined) {
     return (
@@ -47,6 +62,7 @@ export default function App() {
   // Todo listo → app principal
   return (
     <BrowserRouter>
+      {showTutorial && <TutorialOverlay onDone={handleTutorialDone}/>}
       <div className="min-h-screen bg-slate-950 text-slate-100">
         <Navbar />
         <main className="md:ml-20 lg:ml-56 pb-20 md:pb-0">

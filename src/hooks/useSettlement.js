@@ -64,6 +64,13 @@ export function useSettlement() {
    */
   async function requestPayment(toUserId, amount) {
     if (!groupId || !userProfile) return
+
+    // Evitar duplicados: si ya existe un pending de mí a esa persona por ese importe, no crear otro
+    const alreadyDeclared = payments.some(
+      p => p.from === userProfile.id && p.to === toUserId && Math.abs(p.amount - amount) < 0.01
+    )
+    if (alreadyDeclared) return
+
     setConfirming(true)
     try {
       await addDoc(collection(db, 'groups', groupId, 'payments'), {

@@ -15,8 +15,8 @@ import { formatCurrency, amountColor } from '../../utils/formatters'
 import { getAvatarByKey } from '../../assets/avatars'
 
 export default function SettlementPage() {
-  const { userProfile, groupMembers }                                = useApp()
-  const { summary, payments, requestPayment, confirmPayment, confirming } = useSettlement()
+  const { userProfile, groupMembers, payments: pendingPayments }     = useApp()
+  const { summary, requestPayment, confirmPayment, confirming }      = useSettlement()
 
   const getMemberName  = id => groupMembers.find(m => m.id === id)?.name || '?'
   const getMemberColor = id => groupMembers.find(m => m.id === id)?.color || '#2563eb'
@@ -77,6 +77,11 @@ export default function SettlementPage() {
             {summary.pagosOptimos.map((p, i) => {
               const isDebtor   = userProfile?.id === p.de
               const isCreditor = userProfile?.id === p.a
+              const alreadyDeclared = isDebtor && pendingPayments.some(
+                pay => pay.from === userProfile?.id &&
+                       pay.to === p.a &&
+                       Math.abs(pay.amount - p.monto) < 0.01
+              )
               return (
                 <motion.div
                   key={i}
@@ -107,16 +112,20 @@ export default function SettlementPage() {
                     </div>
                   </div>
 
-                  {/* El deudor puede declarar que pagó */}
                   {isDebtor && (
-                    <button
-                      onClick={() => requestPayment(p.a, p.monto)}
-                      disabled={confirming}
-                      className="shrink-0 text-sm bg-blue-600/20 text-blue-400 border border-blue-500/30
-                                 px-3 py-1.5 rounded-lg hover:bg-blue-600/30 transition-all disabled:opacity-50"
-                    >
-                      He pagado
-                    </button>
+                    alreadyDeclared
+                      ? <span className="shrink-0 text-xs text-amber-400 px-3 py-1.5
+                                         bg-amber-500/10 rounded-lg border border-amber-500/20">
+                          Declarado ✓
+                        </span>
+                      : <button
+                          onClick={() => requestPayment(p.a, p.monto)}
+                          disabled={confirming}
+                          className="shrink-0 text-sm bg-blue-600/20 text-blue-400 border border-blue-500/30
+                                     px-3 py-1.5 rounded-lg hover:bg-blue-600/30 transition-all disabled:opacity-50"
+                        >
+                          He pagado
+                        </button>
                   )}
                 </motion.div>
               )
@@ -132,7 +141,7 @@ export default function SettlementPage() {
       )}
 
       {/* ── Pagos pendientes de confirmar ─────────────────────────────────── */}
-      {payments.length > 0 && (
+      {pendingPayments.length > 0 && (
         <div className="glass rounded-2xl p-5">
           <div className="flex items-center gap-2 mb-4">
             <Clock size={15} className="text-amber-400"/>
