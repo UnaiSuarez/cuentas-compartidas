@@ -102,7 +102,7 @@ export default function StatisticsPage() {
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-white">Estadísticas</h2>
         {/* Toggle vista */}
-        <div className="flex gap-1 bg-slate-800/60 rounded-xl p-1">
+        <div data-tutorial="view-toggle" className="flex gap-1 bg-slate-800/60 rounded-xl p-1">
           <button
             onClick={() => setView('personal')}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${

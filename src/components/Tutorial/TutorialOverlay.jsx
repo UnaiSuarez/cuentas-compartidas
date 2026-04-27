@@ -1,128 +1,238 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 
+const PAD = 10         // px de holgura alrededor del elemento
+const TOOLTIP_W = 310  // ancho del tooltip (px)
+const TOOLTIP_H = 210  // alto aprox. del tooltip (px)
+
 const STEPS = [
   {
+    route: '/',
+    selector: null,
     emoji: '👋',
-    title: '¡Bienvenido/a a Cuentas Compartidas!',
-    desc: 'La app para gestionar gastos con tu piso, pareja o amigos sin dramas. En 30 segundos te cuento cómo funciona todo.',
-    tip: null,
+    title: '¡Bienvenido/a!',
+    desc: 'La app para gestionar gastos con tu piso o grupo sin dramas. Te hacemos un recorrido rápido por las partes principales.',
   },
   {
-    emoji: '🏠',
-    title: 'Dashboard',
-    desc: 'Tu pantalla principal. Muestra tu saldo personal, cuánto tienes disponible de verdad y cuánto está pendiente de que te paguen.',
-    tip: 'El número grande es lo que ya está "seguro". Si alguien te debe, verás un desglose justo debajo.',
+    route: '/',
+    selector: '[data-tutorial="my-balance"]',
+    emoji: '💰',
+    title: 'Tu saldo personal',
+    desc: 'Aquí ves tu saldo neto real: el dinero "limpio" que ya está confirmado. Si alguien te debe, aparece desglosado en ámbar justo debajo.',
   },
   {
+    route: '/transacciones',
+    selector: '[data-tutorial="new-transaction"]',
     emoji: '📝',
-    title: 'Transacciones',
-    desc: 'Registra gastos e ingresos del grupo. Puedes elegir quién pagó, entre quiénes se divide y la categoría.',
-    tip: 'El modo "Gasto Común" es para gastos del bote compartido (cuenta del piso), sin que nadie acumule crédito individual.',
+    title: 'Registra un gasto',
+    desc: 'Pulsa este botón para añadir un gasto o ingreso. Elige quién pagó, entre quiénes se divide y la categoría. El modo "Gasto Común" es para el bote del piso.',
   },
   {
+    route: '/liquidacion',
+    selector: '[data-tutorial="optimal-payments"]',
     emoji: '⚖️',
-    title: 'Liquidación',
-    desc: 'Aquí ves exactamente quién le debe a quién y cuánto. El algoritmo calcula los pagos mínimos para saldar todas las deudas.',
-    tip: 'Cuando pagues, pulsa "He pagado" para notificar al otro. Él lo confirmará y la deuda desaparecerá.',
+    title: 'Saldar deudas',
+    desc: 'El algoritmo calcula los pagos mínimos para saldar todas las deudas. Pulsa "He pagado" para notificar al acreedor — él confirmará y la deuda desaparecerá.',
   },
   {
+    route: '/estadisticas',
+    selector: '[data-tutorial="view-toggle"]',
     emoji: '📊',
-    title: 'Estadísticas',
-    desc: 'Gráficos de gastos por categoría y evolución mensual. Alterna entre "Mis datos" (tu parte proporcional) y "Del grupo" (todos).',
-    tip: null,
+    title: 'Mis datos vs Del grupo',
+    desc: 'Alterna entre ver tu parte proporcional de los gastos o los datos del grupo completo. Los gráficos y totales se adaptan al instante.',
   },
   {
-    emoji: '💬',
-    title: 'Chat y Ajustes',
-    desc: 'El chat es para hablar con tu grupo en tiempo real. En Ajustes puedes cambiar tu nombre, avatar, editar categorías o cambiar de sala.',
-    tip: 'Puedes pertenecer a varias salas a la vez — ideal si tienes piso y también compartes gastos con otra gente.',
+    route: '/',
+    selector: null,
+    emoji: '🎉',
+    title: '¡Ya lo tienes todo!',
+    desc: 'Ahora conoces lo esencial. Empieza añadiendo tu primer gasto desde la pestaña Transacciones.',
   },
 ]
 
 export default function TutorialOverlay({ onDone }) {
-  const [step, setStep] = useState(0)
+  const navigate    = useNavigate()
+  const [step, setStep]           = useState(0)
+  const [targetRect, setTargetRect] = useState(null)
 
+  const current = STEPS[step]
   const isFirst = step === 0
   const isLast  = step === STEPS.length - 1
-  const current = STEPS[step]
+
+  // Mide el elemento objetivo y actualiza targetRect
+  const measure = useCallback(() => {
+    if (!current.selector) { setTargetRect(null); return }
+    const el = document.querySelector(current.selector)
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    setTargetRect({
+      top:    r.top    - PAD,
+      left:   r.left   - PAD,
+      width:  r.width  + PAD * 2,
+      height: r.height + PAD * 2,
+    })
+  }, [current.selector])
+
+  // Al cambiar de paso: navega y programa la medición
+  useEffect(() => {
+    setTargetRect(null)
+    navigate(current.route)
+  }, [step]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Busca el elemento después de que la ruta/render se asiente
+  useEffect(() => {
+    if (!current.selector) return
+    const t = setTimeout(() => {
+      const el = document.querySelector(current.selector)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        setTimeout(measure, 350)
+      }
+    }, 420)
+    return () => clearTimeout(t)
+  }, [step, current.selector, measure])
+
+  // Re-mide al hacer scroll o resize
+  useEffect(() => {
+    window.addEventListener('scroll', measure, true)
+    window.addEventListener('resize', measure)
+    return () => {
+      window.removeEventListener('scroll', measure, true)
+      window.removeEventListener('resize', measure)
+    }
+  }, [measure])
+
+  // Calcula posición del tooltip
+  const tooltipPos = (() => {
+    if (!targetRect) {
+      return { top: '50%', left: '50%', transform: 'translate(-50%,-50%)' }
+    }
+    const GAP    = 14
+    const winW   = window.innerWidth
+    const winH   = window.innerHeight
+    const centerX = targetRect.left + targetRect.width / 2
+    const left   = Math.max(10, Math.min(centerX - TOOLTIP_W / 2, winW - TOOLTIP_W - 10))
+    const below  = winH - targetRect.top - targetRect.height
+    const above  = targetRect.top
+
+    if (below >= TOOLTIP_H + GAP || below >= above) {
+      return { top: targetRect.top + targetRect.height + GAP, left }
+    }
+    return { top: Math.max(8, targetRect.top - TOOLTIP_H - GAP), left }
+  })()
 
   const next = () => isLast ? onDone() : setStep(s => s + 1)
   const prev = () => setStep(s => s - 1)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-sm">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="relative w-full max-w-sm bg-slate-900 border border-slate-700/60 rounded-3xl p-7 shadow-2xl"
+    <>
+      {/* Overlay oscuro: SVG con agujero recortado en el elemento */}
+      <svg
+        style={{ position: 'fixed', inset: 0, zIndex: 9990, pointerEvents: 'all', width: '100%', height: '100%' }}
+        aria-hidden="true"
       >
-        {/* Saltar */}
-        <button
-          onClick={onDone}
-          className="absolute top-4 right-4 text-slate-500 hover:text-slate-300 transition-colors"
-          aria-label="Saltar tutorial"
-        >
-          <X size={18}/>
-        </button>
+        <defs>
+          <mask id="tut-mask">
+            <rect width="100%" height="100%" fill="white"/>
+            {targetRect && (
+              <rect
+                x={targetRect.left}  y={targetRect.top}
+                width={targetRect.width} height={targetRect.height}
+                rx={12} ry={12}
+                fill="black"
+              />
+            )}
+          </mask>
+        </defs>
+        <rect width="100%" height="100%" fill="rgba(0,0,0,0.7)" mask="url(#tut-mask)"/>
+      </svg>
 
-        {/* Contenido del paso */}
+      {/* Anillo de resaltado alrededor del elemento */}
+      {targetRect && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          style={{
+            position: 'fixed',
+            top:    targetRect.top,
+            left:   targetRect.left,
+            width:  targetRect.width,
+            height: targetRect.height,
+            zIndex: 9991,
+            borderRadius: 14,
+            border: '2px solid rgba(59,130,246,0.9)',
+            pointerEvents: 'none',
+            boxShadow: '0 0 0 4px rgba(59,130,246,0.15)',
+          }}
+        />
+      )}
+
+      {/* Tooltip */}
+      <div style={{ position: 'fixed', zIndex: 9995, ...( targetRect ? { top: tooltipPos.top, left: tooltipPos.left } : { top: '50%', left: '50%', transform: 'translate(-50%,-50%)' }) }}>
         <AnimatePresence mode="wait">
           <motion.div
             key={step}
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.2 }}
-            className="text-center"
+            style={{ width: TOOLTIP_W }}
+            className="bg-slate-900 border border-slate-700/70 rounded-2xl p-5 shadow-2xl"
           >
-            <p className="text-6xl mb-5">{current.emoji}</p>
-            <h2 className="text-white font-bold text-xl mb-3">{current.title}</h2>
-            <p className="text-slate-300 text-sm leading-relaxed">{current.desc}</p>
-            {current.tip && (
-              <div className="mt-4 bg-blue-500/10 border border-blue-500/20 rounded-xl px-4 py-3 text-left">
-                <p className="text-blue-300 text-xs leading-relaxed">
-                  <span className="font-semibold">Consejo: </span>{current.tip}
-                </p>
+            {/* Saltar */}
+            <button
+              onClick={onDone}
+              className="absolute top-3.5 right-3.5 text-slate-500 hover:text-slate-300 transition-colors"
+              aria-label="Saltar tutorial"
+            >
+              <X size={15}/>
+            </button>
+
+            <div className="flex items-start gap-3 pr-5">
+              <span className="text-3xl leading-none mt-0.5 shrink-0">{current.emoji}</span>
+              <div>
+                <p className="text-white font-bold text-sm leading-snug mb-1.5">{current.title}</p>
+                <p className="text-slate-300 text-xs leading-relaxed">{current.desc}</p>
               </div>
-            )}
+            </div>
+
+            {/* Progreso + navegación */}
+            <div className="flex items-center justify-between mt-4">
+              <div className="flex gap-1 items-center">
+                {STEPS.map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setStep(i)}
+                    className={`rounded-full transition-all ${
+                      i === step ? 'w-4 h-1.5 bg-blue-500' : 'w-1.5 h-1.5 bg-slate-600 hover:bg-slate-500'
+                    }`}
+                  />
+                ))}
+              </div>
+              <div className="flex items-center gap-1.5">
+                {!isFirst && (
+                  <button
+                    onClick={prev}
+                    className="p-1.5 text-slate-400 hover:text-white transition-colors rounded-lg hover:bg-slate-800"
+                  >
+                    <ChevronLeft size={16}/>
+                  </button>
+                )}
+                <button
+                  onClick={next}
+                  className="flex items-center gap-1 text-xs font-semibold bg-blue-600 hover:bg-blue-500
+                             text-white px-3.5 py-1.5 rounded-xl transition-colors"
+                >
+                  {isLast ? '¡Empezar!' : 'Siguiente'}
+                  {!isLast && <ChevronRight size={14}/>}
+                </button>
+              </div>
+            </div>
           </motion.div>
         </AnimatePresence>
-
-        {/* Puntos de progreso */}
-        <div className="flex justify-center gap-1.5 mt-7">
-          {STEPS.map((_, i) => (
-            <button
-              key={i}
-              onClick={() => setStep(i)}
-              className={`rounded-full transition-all ${
-                i === step ? 'w-5 h-2 bg-blue-500' : 'w-2 h-2 bg-slate-600 hover:bg-slate-500'
-              }`}
-            />
-          ))}
-        </div>
-
-        {/* Navegación */}
-        <div className="flex items-center justify-between mt-5">
-          <button
-            onClick={prev}
-            disabled={isFirst}
-            className="flex items-center gap-1 text-sm text-slate-400 hover:text-white transition-colors disabled:opacity-0"
-          >
-            <ChevronLeft size={16}/>
-            Anterior
-          </button>
-          <button
-            onClick={next}
-            className="flex items-center gap-1 text-sm font-semibold bg-blue-600 hover:bg-blue-500
-                       text-white px-5 py-2 rounded-xl transition-colors"
-          >
-            {isLast ? '¡Empezar!' : 'Siguiente'}
-            {!isLast && <ChevronRight size={16}/>}
-          </button>
-        </div>
-      </motion.div>
-    </div>
+      </div>
+    </>
   )
 }

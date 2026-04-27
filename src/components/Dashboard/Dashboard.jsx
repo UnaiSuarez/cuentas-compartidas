@@ -83,6 +83,7 @@ export default function Dashboard() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
+          data-tutorial="my-balance"
           className="glass rounded-2xl p-6 text-center"
         >
           <p className="text-slate-400 text-sm mb-1">Tu saldo, {userProfile.name}</p>

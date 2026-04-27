@@ -10,8 +10,15 @@ export default function BalanceCard() {
 
   const getMemberName = id => groupMembers.find(m => m.id === id)?.name || 'Desconocido'
 
+  // Elimina duplicados: queda solo el pago más reciente por par (from, to)
+  const uniquePending = [...pendingPayments.reduce((map, p) => {
+    const key = `${p.from}-${p.to}`
+    if (!map.has(key)) map.set(key, p)
+    return map
+  }, new Map()).values()]
+
   const hasPagos   = summary.pagosOptimos.length > 0
-  const hasPending = pendingPayments.length > 0
+  const hasPending = uniquePending.length > 0
 
   if (!hasPagos && !hasPending) return (
     <motion.div
@@ -89,7 +96,7 @@ export default function BalanceCard() {
             </p>
           </div>
           <div className="space-y-2">
-            {pendingPayments.map(pay => (
+            {uniquePending.map(pay => (
               <div
                 key={pay.id}
                 className="flex items-center justify-between p-3

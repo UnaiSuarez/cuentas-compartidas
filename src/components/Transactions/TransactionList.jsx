@@ -142,6 +142,7 @@ export default function TransactionList() {
 
           {/* Nueva transacción */}
           <button
+            data-tutorial="new-transaction"
             onClick={openNew}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white
                        px-4 py-2 rounded-xl text-sm font-medium transition-all active:scale-95"

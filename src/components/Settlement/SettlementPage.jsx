@@ -22,6 +22,13 @@ export default function SettlementPage() {
   const getMemberColor = id => groupMembers.find(m => m.id === id)?.color || '#2563eb'
   const getMemberAvatar = id => groupMembers.find(m => m.id === id)?.avatar
 
+  // Elimina duplicados: queda solo el pago más reciente por par (from, to)
+  const uniquePending = [...pendingPayments.reduce((map, p) => {
+    const key = `${p.from}-${p.to}`
+    if (!map.has(key)) map.set(key, p)
+    return map
+  }, new Map()).values()]
+
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-bold text-white">Liquidación</h2>
@@ -71,7 +78,7 @@ export default function SettlementPage() {
 
       {/* ── Pagos óptimos ─────────────────────────────────────────────────── */}
       {summary.pagosOptimos.length > 0 ? (
-        <div className="glass rounded-2xl p-5">
+        <div data-tutorial="optimal-payments" className="glass rounded-2xl p-5">
           <p className="text-slate-400 text-xs uppercase tracking-wider mb-4">Pagos a realizar</p>
           <div className="space-y-3">
             {summary.pagosOptimos.map((p, i) => {
@@ -141,16 +148,16 @@ export default function SettlementPage() {
       )}
 
       {/* ── Pagos pendientes de confirmar ─────────────────────────────────── */}
-      {pendingPayments.length > 0 && (
+      {uniquePending.length > 0 && (
         <div className="glass rounded-2xl p-5">
           <div className="flex items-center gap-2 mb-4">
             <Clock size={15} className="text-amber-400"/>
             <p className="text-slate-400 text-xs uppercase tracking-wider">
-              Esperando confirmación ({payments.length})
+              Esperando confirmación ({uniquePending.length})
             </p>
           </div>
           <div className="space-y-2">
-            {payments.map(pay => {
+            {uniquePending.map(pay => {
               const isCreditor = userProfile?.id === pay.to
               return (
                 <div
