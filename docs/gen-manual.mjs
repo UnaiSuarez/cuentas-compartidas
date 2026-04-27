@@ -149,7 +149,7 @@ const buildManual = async () => {
   const infoItems = [
     ['Producto:', 'Cuentas Compartidas'],
     ['Tipo de documento:', 'Manual de Usuario'],
-    ['Version:', '1.0'],
+    ['Version:', '2.1'],
     ['Fecha de emision:', 'Abril de 2026'],
     ['Destinatarios:', 'Usuarios finales de la aplicacion'],
     ['Idioma:', 'Espanol'],
@@ -352,13 +352,15 @@ const buildManual = async () => {
   y = h2(doc, y, '5.1 Crear una Transaccion');
   y = p(doc, y, 'Para registrar una nueva transaccion, accede a la seccion "Transacciones" desde la barra de navegacion. Veras el formulario de nueva transaccion con los siguientes campos obligatorios:');
   y = sp(y);
-  y = bullet(doc, y, 'Tipo: selecciona si es un gasto (dinero que se ha gastado) o un ingreso (dinero que ha entrado al grupo, como devoluciones, ingresos extraordinarios o aportes especiales).');
+  y = bullet(doc, y, 'Tipo / Modo: selecciona Gasto individual (alguien del grupo adelanta el dinero por los demas), Gasto Comun (el gasto sale del fondo colectivo del grupo, nadie acumula credito individual) o Ingreso (dinero que entra al grupo, como devoluciones, ventas o aportes extraordinarios).');
   y = bullet(doc, y, 'Descripcion: escribe que es la transaccion. Silla claro y descriptivo para que todos los miembros entiendan de que se trata. Maximo 100 caracteres. Ejemplos: "Compra semanal en Mercadona", "Alquiler mes de abril", "Cena cumpleanos de Pedro".');
   y = bullet(doc, y, 'Categoria: selecciona la categoria que mejor describe la transaccion. Ver seccion 5.2 para la lista completa de categorias.');
   y = bullet(doc, y, 'Monto: introduce la cantidad exacta en euros. Se admiten decimales separados por punto o coma, por ejemplo 85.50 o 120,00.');
-  y = bullet(doc, y, 'Quien pago: selecciona de la lista desplegable el miembro del grupo que desembolso el dinero. Esta persona es la que "adelanto" el pago por el grupo.');
-  y = bullet(doc, y, 'Quienes participan: selecciona uno o varios miembros que se benefician del gasto. El monto se dividira equitativamente entre ellos. Puedes seleccionar todos los miembros o solo algunos.');
+  y = bullet(doc, y, 'Quien pago: solo en modo Gasto individual. Selecciona el miembro que desembolso el dinero. En modo Gasto Comun este campo no aparece (el fondo colectivo es quien paga).');
+  y = bullet(doc, y, 'Quienes participan: selecciona uno o varios miembros que se benefician del gasto. El monto se dividira equitativamente entre ellos.');
   y = bullet(doc, y, 'Fecha: por defecto es la fecha actual, pero puedes cambiarla para registrar gastos de dias anteriores.');
+  y = sp(y);
+  y = p(doc, y, 'Los gastos registrados en modo Gasto Comun se muestran en la lista de transacciones con una pastilla azul "Fondo comun" en lugar del nombre del pagador, para distinguirlos visualmente de los gastos individuales.');
   y = sp(y, 2);
 
   y = h2(doc, y, '5.2 Categorias Disponibles');
@@ -607,7 +609,7 @@ const buildManual = async () => {
     ['Cuantas personas pueden estar en un grupo?',
      'No hay un limite tecnico rigido para el numero de miembros de un grupo. Sin embargo, la aplicacion esta disenada y optimizada para grupos de entre 2 y 15 personas, que es el rango habitual para pisos compartidos, familias y grupos de amigos.'],
     ['Puedo estar en varios grupos a la vez?',
-     'Actualmente cada usuario pertenece a un grupo a la vez. Si necesitas gestionar varios grupos distintos (por ejemplo, el piso y un viaje), deberias hacerlo con el mismo grupo o crear cuentas separadas para cada contexto.'],
+     'Si. Desde la version 2.0, cada usuario puede pertenecer a varias salas a la vez: el piso, un viaje, la familia, etc. Usa el Selector de Sala para cambiar entre ellas en cualquier momento, o accede desde Ajustes > Cambiar de sala.'],
     ['Que pasa si elimino una transaccion por error?',
      'La eliminacion de transacciones es permanente y no se puede deshacer. Por eso la aplicacion pide confirmacion antes de eliminar. Si has eliminado algo por error, tendras que volver a registrar la transaccion manualmente con los datos correctos.'],
     ['El calculo de pagos optimos es siempre correcto?',

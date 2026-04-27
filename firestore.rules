@@ -16,22 +16,18 @@ service cloud.firestore {
             && request.auth.uid in resource.data.memberIds;
       }
 
-      function isAdmin() {
-        return request.auth != null
-            && resource.data.createdBy == request.auth.uid;
-      }
-
-      // Cualquier usuario autenticado puede leer grupos (necesario para buscar por código al unirse).
+      // Cualquier usuario autenticado puede leer grupos (necesario para buscar
+      // por código al unirse).
       allow read: if request.auth != null;
 
-      // Solo un usuario autenticado puede crear, y debe incluirse como primer miembro.
+      // Solo usuarios autenticados pueden crear un grupo, y deben incluirse
+      // a sí mismos como primer miembro.
       allow create: if request.auth != null
                    && request.auth.uid in request.resource.data.memberIds;
 
-      // Miembros pueden actualizar el grupo.
-      // Un usuario que aún no es miembro puede añadirse a sí mismo (acción de unirse):
-      //   – solo modifica memberIds y updatedAt
-      //   – ya está en la nueva lista de memberIds
+      // Miembros pueden actualizar el grupo (configuración, categorías, etc.)
+      // También se permite la operación de unirse: añadir el propio uid a
+      // memberIds sin modificar ningún otro campo sensible.
       allow update: if isMember()
                    || (
                      request.auth != null
@@ -41,8 +37,9 @@ service cloud.firestore {
                                             .hasOnly(['memberIds', 'updatedAt'])
                    );
 
-      // Solo el admin (createdBy) puede eliminar el grupo.
-      allow delete: if isAdmin();
+      // Solo el creador puede eliminar el grupo.
+      allow delete: if request.auth != null
+                   && request.auth.uid == resource.data.createdBy;
 
       // Subcollections: solo miembros del grupo pueden leer y escribir.
       match /transactions/{txId} {
