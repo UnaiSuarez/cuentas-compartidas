@@ -56,17 +56,19 @@ const STEPS = [
 /** Flecha SVG animada que señala al elemento enfocado */
 function TutorialArrow({ visible }) {
   const pathRef = useRef(null)
-  const drawn   = useRef(false)
 
   useEffect(() => {
     if (!visible || !pathRef.current) return
-    drawn.current = false
-    const drawable = svg.createDrawable(pathRef.current)
-    animate(drawable, {
-      draw:     ['0 0', '0 1'],
-      duration: 500,
-      easing:   'easeInOutQuart',
-    })
+    const t = setTimeout(() => {
+      if (!pathRef.current) return
+      const drawable = svg.createDrawable(pathRef.current)
+      animate(drawable, {
+        draw:     ['0 0', '0 1'],
+        duration: 550,
+        easing:   'easeInOutQuart',
+      })
+    }, 80)
+    return () => clearTimeout(t)
   }, [visible])
 
   if (!visible) return null

@@ -25,6 +25,13 @@ function PageLoader() {
 export default function App() {
   const { firebaseUser, userProfile, groupId, loading } = useApp()
 
+  // Minimum splash duration so the draw animation has time to complete
+  const [splashDone, setSplashDone] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setSplashDone(true), 2200)
+    return () => clearTimeout(t)
+  }, [])
+
   const tutorialKey = userProfile?.id ? `tutorial_seen_${userProfile.id}` : null
   const [showTutorial, setShowTutorial] = useState(false)
 
@@ -39,8 +46,8 @@ export default function App() {
     setShowTutorial(false)
   }
 
-  // Splash animada mientras carga Firebase
-  if (loading || firebaseUser === undefined) {
+  // Splash animada mientras carga Firebase (o durante los primeros 2.2s)
+  if (loading || firebaseUser === undefined || !splashDone) {
     return <SplashScreen />
   }
 

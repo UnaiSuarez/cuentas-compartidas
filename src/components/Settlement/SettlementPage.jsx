@@ -15,13 +15,17 @@ function AnimatedArrow({ delay = 0 }) {
   const pathRef = useRef(null)
   useEffect(() => {
     if (!pathRef.current) return
-    const drawable = svg.createDrawable(pathRef.current)
-    animate(drawable, {
-      draw:     ['0 0', '0 1'],
-      duration: 700,
-      delay,
-      easing:   'easeInOutQuart',
-    })
+    // Wait for parent revealOnScroll (~700ms) + framer-motion enter delay before drawing
+    const t = setTimeout(() => {
+      if (!pathRef.current) return
+      const drawable = svg.createDrawable(pathRef.current)
+      animate(drawable, {
+        draw:     ['0 0', '0 1'],
+        duration: 700,
+        easing:   'easeInOutQuart',
+      })
+    }, delay)
+    return () => clearTimeout(t)
   }, [delay])
 
   return (
@@ -178,7 +182,7 @@ export default function SettlementPage() {
                   <div className="flex items-center gap-3 min-w-0 flex-wrap">
                     <p className="text-xs text-red-400 font-medium">{getMemberName(p.de)}</p>
                     <div className="flex flex-col items-center gap-0.5">
-                      <AnimatedArrow delay={i * 120}/>
+                      <AnimatedArrow delay={900 + i * 120}/>
                       <span className="text-white font-bold text-sm">{formatCurrency(p.monto)}</span>
                     </div>
                     <p className="text-xs text-emerald-400 font-medium">{getMemberName(p.a)}</p>

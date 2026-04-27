@@ -24,7 +24,7 @@ function FloatingCoins() {
     const symbols  = ['€', '€', '$', '£', '€']
     const coins = Array.from({ length: 18 }, (_, i) => {
       const el   = document.createElement('div')
-      const size = 8 + Math.random() * 10
+      const size = 14 + Math.random() * 14
       el.textContent = symbols[Math.floor(Math.random() * symbols.length)]
       Object.assign(el.style, {
         position:    'absolute',
@@ -70,15 +70,14 @@ export default function AuthGate() {
 
   const step = !firebaseUser ? 'auth' : !userProfile?.name ? 'profile' : null
 
-  // Animación del logo al montar
+  // Animación del logo al montar (solo escala — framer-motion maneja el fade del contenedor)
   const logoRef = useRef(null)
   useEffect(() => {
     if (!logoRef.current) return
     animate(logoRef.current, {
-      scale:   [0.6, 1],
-      opacity: [0, 1],
+      scale:    [0.6, 1],
       duration: 700,
-      easing:  'easeOutBack',
+      easing:   'easeOutExpo',
     })
   }, [])
 
@@ -101,7 +100,7 @@ export default function AuthGate() {
           animate={{ opacity: 1, y: 0 }}
           className="text-center mb-8"
         >
-          <div ref={logoRef} className="inline-block" style={{ opacity: 0 }}>
+          <div ref={logoRef} className="inline-block">
             <AppLogo size={64}/>
           </div>
           <h1 className="text-2xl font-bold text-white mt-3 tracking-tight">Cuentas Compartidas</h1>

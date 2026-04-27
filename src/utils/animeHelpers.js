@@ -1,5 +1,7 @@
 import { animate, stagger } from 'animejs'
 
+const BURST_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316']
+
 /** Ripple de click en un botón */
 export function addRipple(e, element) {
   const rect = element.getBoundingClientRect()
@@ -11,10 +13,10 @@ export function addRipple(e, element) {
     position:     'absolute',
     left:         `${x}px`,
     top:          `${y}px`,
-    width:        '4px',
-    height:       '4px',
+    width:        '8px',
+    height:       '8px',
     borderRadius: '50%',
-    background:   'rgba(255,255,255,0.35)',
+    background:   'rgba(255,255,255,0.55)',
     transform:    'translate(-50%,-50%)',
     pointerEvents:'none',
     zIndex:       '10',
@@ -27,38 +29,38 @@ export function addRipple(e, element) {
   element.appendChild(ripple)
 
   animate(ripple, {
-    width:    ['4px', '400px'],
-    height:   ['4px', '400px'],
-    opacity:  [0.4, 0],
+    width:    ['8px', '450px'],
+    height:   ['8px', '450px'],
+    opacity:  [0.55, 0],
     duration: 700,
     easing:   'easeOutExpo',
     onComplete: () => ripple.remove(),
   })
 }
 
-/** Partículas que salen al hacer hover en un botón */
-export function addHoverParticles(element, color = '#3b82f6') {
-  const count = 8
+/** Partículas de colores que salen al hacer hover en un botón */
+export function addHoverParticles(element, _color = '#3b82f6') {
+  const count = 10
   const rect  = element.getBoundingClientRect()
   const cx    = rect.left + rect.width  / 2
   const cy    = rect.top  + rect.height / 2
 
   const particles = Array.from({ length: count }, (_, i) => {
     const el    = document.createElement('div')
-    const size  = 4 + Math.random() * 4
+    const size  = 8 + Math.random() * 8   // 8–16 px
     const angle = (i / count) * Math.PI * 2
-    const dist  = 25 + Math.random() * 35
+    const dist  = 45 + Math.random() * 55  // 45–100 px
 
     Object.assign(el.style, {
       position:     'fixed',
       width:        `${size}px`,
       height:       `${size}px`,
       borderRadius: '50%',
-      background:   color,
+      background:   BURST_COLORS[i % BURST_COLORS.length],
       left:         `${cx}px`,
       top:          `${cy}px`,
       transform:    'translate(-50%,-50%)',
-      opacity:      '0.9',
+      opacity:      '1',
       pointerEvents:'none',
       zIndex:       '9998',
     })
@@ -66,23 +68,24 @@ export function addHoverParticles(element, color = '#3b82f6') {
 
     animate(el, {
       translateX: Math.cos(angle) * dist,
-      translateY: Math.sin(angle) * dist - 12,
-      scale:      [1, 0.1],
-      opacity:    [0.9, 0],
-      duration:   600,
+      translateY: Math.sin(angle) * dist - 20,
+      scale:      [1.2, 0],
+      opacity:    [1, 0],
+      duration:   900,
       easing:     'easeOutExpo',
-      onComplete: () => el.remove(),
+      onComplete: () => { try { el.remove() } catch (_) {} },
     })
 
     return el
   })
 
-  return () => particles.forEach(p => p.remove())
+  return () => particles.forEach(p => { try { p.remove() } catch (_) {} })
 }
 
 /** Tilt 3D al pasar el cursor por una tarjeta */
 export function setupTilt(element, maxDeg = 5) {
   let currentAnim = null
+  const parent = element.parentElement
 
   function onMove(e) {
     const rect = element.getBoundingClientRect()
@@ -110,6 +113,8 @@ export function setupTilt(element, maxDeg = 5) {
 
   element.style.transformStyle = 'preserve-3d'
   element.style.willChange     = 'transform'
+  if (parent) parent.style.perspective = '600px'
+
   element.addEventListener('mousemove',  onMove)
   element.addEventListener('mouseleave', onLeave)
 
@@ -118,6 +123,7 @@ export function setupTilt(element, maxDeg = 5) {
     element.removeEventListener('mouseleave', onLeave)
     element.style.transformStyle = ''
     element.style.willChange     = ''
+    if (parent) parent.style.perspective = ''
   }
 }
 
@@ -151,6 +157,12 @@ export function staggerReveal(elements, opts = {}) {
   const { duration = 500, staggerMs = 40, translateY = 16 } = opts
   const els = Array.from(elements)
   if (!els.length) return
+
+  // Set initial hidden state synchronously before animate (no flash)
+  els.forEach(el => {
+    el.style.opacity   = '0'
+    el.style.transform = `translateY(${translateY}px)`
+  })
 
   animate(els, {
     opacity:    [0, 1],

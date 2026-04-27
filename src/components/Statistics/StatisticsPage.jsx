@@ -20,11 +20,13 @@ function AnimatedHeading({ children, className }) {
   useEffect(() => {
     if (!ref.current) return
     const spans = ref.current.querySelectorAll('.word')
+    // Set initial hidden state before animate (no flash)
+    spans.forEach(s => { s.style.opacity = '0'; s.style.transform = 'translateY(8px)' })
     animate(spans, {
       opacity:    [0, 1],
       translateY: [8, 0],
-      duration:   350,
-      delay:      stagger(70),
+      duration:   400,
+      delay:      stagger(80),
       easing:     'easeOutExpo',
     })
   }, [])
@@ -32,7 +34,7 @@ function AnimatedHeading({ children, className }) {
   return (
     <h2 ref={ref} className={className}>
       {words.map((w, i) => (
-        <span key={i} className="word inline-block mr-1" style={{ opacity: 0 }}>{w}</span>
+        <span key={i} className="word inline-block mr-1">{w}</span>
       ))}
     </h2>
   )
@@ -42,20 +44,12 @@ export default function StatisticsPage() {
   const { transactions, groupMembers, categories, userProfile } = useApp()
   const [view, setView] = useState('personal')
 
-  // Refs para scroll reveal
-  const totalsRef    = useRef(null)
-  const catRef       = useRef(null)
-  const memberRef    = useRef(null)
-  const monthlyRef   = useRef(null)
+  // Scroll reveal solo para la sección de totales (siempre renderizada)
+  const totalsRef = useRef(null)
 
   useEffect(() => {
-    const cleanups = [
-      revealOnScroll(totalsRef.current,  { delay: 0   }),
-      revealOnScroll(catRef.current,     { delay: 80  }),
-      revealOnScroll(memberRef.current,  { delay: 120 }),
-      revealOnScroll(monthlyRef.current, { delay: 160 }),
-    ].filter(Boolean)
-    return () => cleanups.forEach(fn => fn())
+    const cleanup = revealOnScroll(totalsRef.current, { delay: 0 })
+    return () => { if (cleanup) cleanup() }
   }, [])
 
   // Animación del toggle de vista
@@ -63,8 +57,8 @@ export default function StatisticsPage() {
   function handleViewChange(v) {
     if (toggleRef.current) {
       animate(toggleRef.current, {
-        scale:    [1, 0.97, 1],
-        duration: 200,
+        scale:    [1, 0.93, 1],
+        duration: 250,
         easing:   'easeOutSine',
       })
     }
@@ -185,7 +179,7 @@ export default function StatisticsPage() {
         </div>
       </div>
 
-      {/* Totales */}
+      {/* Totales — scroll reveal (siempre visible) */}
       <div ref={totalsRef} className="grid grid-cols-2 gap-3" style={{ opacity: 0 }}>
         <div className="glass rounded-2xl p-4">
           <p className="text-xs text-slate-400 mb-1">
@@ -208,9 +202,9 @@ export default function StatisticsPage() {
         </div>
       </div>
 
-      {/* Gastos por categoría */}
+      {/* Gastos por categoría — Recharts maneja la animación */}
       {byCategory.length > 0 && (
-        <div ref={catRef} className="glass rounded-2xl p-5" style={{ opacity: 0 }}>
+        <div className="glass rounded-2xl p-5">
           <p className="text-slate-400 text-xs uppercase tracking-wider mb-4">Por categoría</p>
           <div className="flex flex-col md:flex-row items-center gap-4">
             <div className="w-full md:w-64 h-52">
@@ -250,7 +244,7 @@ export default function StatisticsPage() {
 
       {/* Gastos por persona (grupo) */}
       {view === 'group' && byMember.some(m => m.total > 0) && (
-        <div ref={memberRef} className="glass rounded-2xl p-5" style={{ opacity: 0 }}>
+        <div className="glass rounded-2xl p-5">
           <p className="text-slate-400 text-xs uppercase tracking-wider mb-4">Gastos pagados por persona</p>
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
@@ -271,9 +265,9 @@ export default function StatisticsPage() {
         </div>
       )}
 
-      {/* Evolución mensual con animación de línea */}
+      {/* Evolución mensual */}
       {monthly.length > 1 && (
-        <div ref={monthlyRef} className="glass rounded-2xl p-5" style={{ opacity: 0 }}>
+        <div className="glass rounded-2xl p-5">
           <p className="text-slate-400 text-xs uppercase tracking-wider mb-4">Evolución mensual</p>
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">

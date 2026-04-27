@@ -57,8 +57,7 @@ export default function TransactionList() {
   const [deleting,   setDeleting]   = useState(null)
   const [showExport, setShowExport] = useState(false)
 
-  const listRef    = useRef(null)
-  const prevCount  = useRef(0)
+  const listRef = useRef(null)
 
   const getMemberName = id => groupMembers.find(m => m.id === id)?.name || '—'
 
@@ -89,16 +88,12 @@ export default function TransactionList() {
     })
   }, [transactions, search, dateFilter, typeFilter, catFilter, groupMembers])
 
-  // Stagger reveal cuando cambia la lista filtrada
+  // Stagger reveal cuando cambia el filtro o carga la lista
   useEffect(() => {
     if (!listRef.current) return
     const items = listRef.current.querySelectorAll('[data-tx-item]')
     if (!items.length) return
-    // Solo animar si la cantidad cambió significativamente (filtro nuevo o carga inicial)
-    if (Math.abs(items.length - prevCount.current) > 1 || prevCount.current === 0) {
-      staggerReveal(items, { duration: 400, staggerMs: 35, translateY: 12 })
-    }
-    prevCount.current = items.length
+    staggerReveal(items, { duration: 350, staggerMs: 30, translateY: 10 })
   }, [filtered.length, search, dateFilter, typeFilter, catFilter])
 
   function openEdit(tx) { setEditData(tx);   setShowForm(true) }
