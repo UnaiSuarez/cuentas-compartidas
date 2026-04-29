@@ -28,6 +28,10 @@ function parseGastosPisoFormat(workbook) {
   const contributions = []
   const expenses = []
   const personSet = new Set()
+  // Tracks which person names appear as contributors in each sheet.
+  // Used to assign the correct splitAmong per expense (each sheet may
+  // represent a different era of flatmates).
+  const personsBySheet = {}   // { sheetName: string[] }
 
   for (const sheetName of workbook.SheetNames) {
     const ws = workbook.Sheets[sheetName]
@@ -45,6 +49,8 @@ function parseGastosPisoFormat(workbook) {
     }
     if (dataStart === -1) continue
 
+    const sheetPersons = new Set()
+
     for (let i = dataStart; i < rows.length; i++) {
       const row = rows[i]
       if (!row || row.every(c => c == null)) continue
@@ -60,6 +66,7 @@ function parseGastosPisoFormat(workbook) {
       ) {
         const name = persona.toLowerCase().trim()
         personSet.add(name)
+        sheetPersons.add(name)
         contributions.push({
           persona: name,
           amount: Number(dineroAport),
@@ -94,12 +101,15 @@ function parseGastosPisoFormat(workbook) {
         })
       }
     }
+
+    personsBySheet[sheetName] = [...sheetPersons]
   }
 
   return {
     contributions,
     expenses,
     personNames: [...personSet],
+    personsBySheet,
   }
 }
 

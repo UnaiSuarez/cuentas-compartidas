@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence }         from 'framer-motion'
 import {
   X, Upload, ArrowRight, Check, AlertTriangle,
-  FileSpreadsheet, ChevronDown,
+  FileSpreadsheet, ChevronDown, Users,
 } from 'lucide-react'
 import {
   collection, writeBatch, doc,
@@ -15,7 +15,52 @@ import { parseExcelFile, guessCategoryId } from '../../utils/excelParser'
 
 const STEPS = ['Archivo', 'Personas', 'Revisar', 'Listo']
 
-// ─── Step 0 — Upload ────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Auto-detects the transition date and which people split expenses in each period.
+ * Logic:
+ *   - Finds each person's first POSITIVE contribution date.
+ *   - Transition = the latest "first date" (the person who joined last).
+ *   - Pre-period: persons with any positive contrib BEFORE transition.
+ *   - Post-period: persons with any positive contrib ON/AFTER transition.
+ */
+function detectPeriods(contributions) {
+  const byPerson = {}
+  for (const c of contributions) {
+    if (!byPerson[c.persona]) byPerson[c.persona] = []
+    if (c.date && c.amount > 0) byPerson[c.persona].push(c.date)
+  }
+
+  // Sort each person's dates
+  for (const name of Object.keys(byPerson)) {
+    byPerson[name].sort((a, b) => a - b)
+  }
+
+  // Latest "first contribution" date across all persons → transition date
+  let transitionDate = null
+  for (const dates of Object.values(byPerson)) {
+    if (!dates.length) continue
+    if (!transitionDate || dates[0] > transitionDate) transitionDate = dates[0]
+  }
+
+  if (!transitionDate) return null
+
+  const prePeople = new Set()
+  const postPeople = new Set()
+  for (const [name, dates] of Object.entries(byPerson)) {
+    if (dates.some(d => d < transitionDate)) prePeople.add(name)
+    if (dates.some(d => d >= transitionDate)) postPeople.add(name)
+  }
+
+  return {
+    cutoffDate: transitionDate.toISOString().split('T')[0],
+    prePeople:  [...prePeople],
+    postPeople: [...postPeople],
+  }
+}
+
+// ─── Step 0 — Upload ─────────────────────────────────────────────────────────
 
 function StepUpload({ onFile, parseError }) {
   const [dragOver, setDragOver] = useState(false)
@@ -64,68 +109,157 @@ function StepUpload({ onFile, parseError }) {
         <p className="font-medium text-slate-300 mb-2">Formato esperado (gastos-piso):</p>
         <p>• Fila 2: cabeceras — columna D <code className="text-slate-300">persona</code>, E <code className="text-slate-300">dinero</code>, F <code className="text-slate-300">fecha</code></p>
         <p>• Columnas I–M: descripción del gasto, importe, ÷3, pagado, fecha</p>
-        <p>• Datos desde fila 3 en adelante</p>
-        <p>• Se procesarán todas las hojas del libro</p>
+        <p>• Datos desde fila 3; se procesan todas las hojas</p>
       </div>
     </div>
   )
 }
 
-// ─── Step 1 — Name mapping ───────────────────────────────────────────────────
+// ─── Step 1 — Name mapping + period config ────────────────────────────────────
 
-function StepMapping({ personNames, nameMap, setNameMap, groupMembers, contributions, expenses }) {
-  const assignedCount = Object.values(nameMap).filter(v => v && v !== 'skip').length
-
+function PeriodPeopleSelector({ label, people, allNames, nameMap, groupMembers, onChange }) {
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-slate-400">
-        Encontré{' '}
-        <span className="text-white font-medium">{contributions.length}</span> aportaciones
-        y{' '}
-        <span className="text-white font-medium">{expenses.length}</span> gastos comunes.
-        Asigna cada nombre del Excel a un miembro del grupo.
-      </p>
-
-      <div className="space-y-3">
-        {personNames.map(name => {
-          const aportCount = contributions.filter(c => c.persona === name).length
+    <div className="space-y-1.5">
+      <p className="text-xs font-medium text-slate-400">{label}</p>
+      <div className="flex flex-wrap gap-2">
+        {allNames.map(name => {
+          const uid   = nameMap[name]
+          const label = uid && uid !== 'skip'
+            ? (groupMembers.find(m => m.id === uid)?.name ?? name)
+            : name
+          const active = people.includes(name)
           return (
-            <div
+            <button
               key={name}
-              className="flex items-center justify-between gap-4 p-3 bg-slate-800/60 rounded-xl border border-slate-700/50"
+              type="button"
+              onClick={() => onChange(
+                active ? people.filter(n => n !== name) : [...people, name]
+              )}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors capitalize
+                ${active
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-700 text-slate-400 hover:text-white'}`}
             >
-              <div>
-                <span className="font-medium text-white capitalize">{name}</span>
-                <span className="text-xs text-slate-500 ml-2">{aportCount} aportaciones</span>
-              </div>
-              <div className="relative">
-                <select
-                  value={nameMap[name] ?? ''}
-                  onChange={e => setNameMap(m => ({ ...m, [name]: e.target.value || null }))}
-                  className="pl-3 pr-8 py-1.5 rounded-lg bg-slate-700 text-sm text-white border border-slate-600 focus:border-blue-500 focus:outline-none appearance-none cursor-pointer"
-                >
-                  <option value="">Sin asignar (omitir aportaciones)</option>
-                  <option value="skip">Ignorar completamente</option>
-                  {groupMembers.map(m => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-              </div>
-            </div>
+              {label}
+            </button>
           )
         })}
       </div>
+    </div>
+  )
+}
 
-      {assignedCount === 0 && (
-        <div className="flex items-start gap-2 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl text-sm text-yellow-400">
-          <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-          Asigna al menos un nombre para poder continuar. Los gastos comunes siempre se importan.
+function StepMapping({
+  personNames, nameMap, setNameMap, groupMembers,
+  contributions, expenses,
+  cutoffDate, setCutoffDate,
+  prePeople,  setPrePeople,
+  postPeople, setPostPeople,
+  noDatePeriod, setNoDatePeriod,
+}) {
+  const assignedCount = Object.values(nameMap).filter(v => v && v !== 'skip').length
+
+  return (
+    <div className="space-y-5">
+      {/* ── Name assignment */}
+      <div>
+        <p className="text-sm text-slate-400 mb-3">
+          Encontré{' '}
+          <span className="text-white font-medium">{contributions.length}</span> aportaciones
+          y{' '}
+          <span className="text-white font-medium">{expenses.length}</span> gastos comunes.
+          Asigna cada nombre del Excel a un miembro del grupo.
+        </p>
+
+        <div className="space-y-3">
+          {personNames.map(name => {
+            const aportCount = contributions.filter(c => c.persona === name).length
+            return (
+              <div
+                key={name}
+                className="flex items-center justify-between gap-4 p-3 bg-slate-800/60 rounded-xl border border-slate-700/50"
+              >
+                <div>
+                  <span className="font-medium text-white capitalize">{name}</span>
+                  <span className="text-xs text-slate-500 ml-2">{aportCount} aportaciones</span>
+                </div>
+                <div className="relative">
+                  <select
+                    value={nameMap[name] ?? ''}
+                    onChange={e => setNameMap(m => ({ ...m, [name]: e.target.value || null }))}
+                    className="pl-3 pr-8 py-1.5 rounded-lg bg-slate-700 text-sm text-white border border-slate-600 focus:border-blue-500 focus:outline-none appearance-none cursor-pointer"
+                  >
+                    <option value="">Sin asignar (omitir aportaciones)</option>
+                    <option value="skip">Ignorar completamente</option>
+                    {groupMembers.map(m => (
+                      <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                </div>
+              </div>
+            )
+          })}
         </div>
-      )}
 
-      <div className="p-3 bg-slate-800/40 rounded-xl text-xs text-slate-400">
-        Los gastos comunes se repartirán entre todos los miembros del grupo.
+        {assignedCount === 0 && (
+          <div className="flex items-start gap-2 p-3 mt-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl text-sm text-yellow-400">
+            <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            Asigna al menos un nombre para poder continuar.
+          </div>
+        )}
+      </div>
+
+      {/* ── Period configuration */}
+      <div className="bg-slate-800/50 border border-slate-700/60 rounded-xl p-4 space-y-4">
+        <div className="flex items-center gap-2">
+          <Users className="w-4 h-4 text-blue-400" />
+          <p className="text-sm font-medium text-white">Cambio de inquilinos</p>
+        </div>
+        <p className="text-xs text-slate-400 -mt-2">
+          Los gastos comunes se reparten solo entre las personas que vivían en ese momento.
+          Ajusta la fecha y los miembros de cada periodo si es necesario.
+        </p>
+
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-slate-400">Fecha del cambio</p>
+          <input
+            type="date"
+            value={cutoffDate}
+            onChange={e => setCutoffDate(e.target.value)}
+            className="px-3 py-1.5 rounded-lg bg-slate-700 text-sm text-white border border-slate-600 focus:border-blue-500 focus:outline-none"
+          />
+        </div>
+
+        <PeriodPeopleSelector
+          label={`Antes del ${cutoffDate || '…'} (periodo anterior)`}
+          people={prePeople}
+          allNames={personNames}
+          nameMap={nameMap}
+          groupMembers={groupMembers}
+          onChange={setPrePeople}
+        />
+
+        <PeriodPeopleSelector
+          label={`Desde el ${cutoffDate || '…'} (periodo actual)`}
+          people={postPeople}
+          allNames={personNames}
+          nameMap={nameMap}
+          groupMembers={groupMembers}
+          onChange={setPostPeople}
+        />
+
+        <div className="flex items-center gap-3">
+          <p className="text-xs text-slate-400 shrink-0">Gastos sin fecha →</p>
+          <select
+            value={noDatePeriod}
+            onChange={e => setNoDatePeriod(e.target.value)}
+            className="px-3 py-1.5 rounded-lg bg-slate-700 text-xs text-white border border-slate-600 focus:border-blue-500 focus:outline-none"
+          >
+            <option value="pre">Periodo anterior</option>
+            <option value="post">Periodo actual</option>
+          </select>
+        </div>
       </div>
     </div>
   )
@@ -139,15 +273,13 @@ function StepPreview({ incomeItems, expenseItems, skippedCount, groupMembers, ca
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-slate-400">
-          <span className="text-white font-medium">{incomeItems.length + expenseItems.length}</span> transacciones
-          listas para importar
-          {skippedCount > 0 && (
-            <span className="text-yellow-400 ml-2">({skippedCount} omitidas)</span>
-          )}
-        </p>
-      </div>
+      <p className="text-sm text-slate-400">
+        <span className="text-white font-medium">{incomeItems.length + expenseItems.length}</span> transacciones
+        listas para importar
+        {skippedCount > 0 && (
+          <span className="text-yellow-400 ml-2">({skippedCount} omitidas)</span>
+        )}
+      </p>
 
       <div className="flex gap-2">
         <button
@@ -179,14 +311,13 @@ function StepPreview({ incomeItems, expenseItems, skippedCount, groupMembers, ca
                   <th className="px-3 py-2 text-left font-medium">Persona</th>
                   <th className="px-3 py-2 text-right font-medium">Importe</th>
                   <th className="px-3 py-2 text-left font-medium">Fecha</th>
-                  <th className="px-3 py-2 text-left font-medium">Hoja</th>
                 </>
               ) : (
                 <>
                   <th className="px-3 py-2 text-left font-medium">Descripción</th>
                   <th className="px-3 py-2 text-right font-medium">Importe</th>
                   <th className="px-3 py-2 text-left font-medium">Fecha</th>
-                  <th className="px-3 py-2 text-left font-medium">Categoría</th>
+                  <th className="px-3 py-2 text-left font-medium">Reparto</th>
                 </>
               )}
             </tr>
@@ -198,42 +329,41 @@ function StepPreview({ incomeItems, expenseItems, skippedCount, groupMembers, ca
                   Sin datos en esta pestaña
                 </td>
               </tr>
-            ) : (
-              displayItems.map((item, idx) => {
-                const dateStr = item.date
-                  ? item.date.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' })
-                  : '—'
+            ) : displayItems.map((item, idx) => {
+              const dateStr = item.date
+                ? item.date.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' })
+                : '—'
 
-                if (activeTab === 'income') {
-                  const memberName = item.uid
-                    ? (groupMembers.find(m => m.id === item.uid)?.name ?? '?')
-                    : '?'
-                  return (
-                    <tr key={idx} className="hover:bg-slate-800/40">
-                      <td className="px-3 py-1.5 capitalize text-white">{memberName}</td>
-                      <td className={`px-3 py-1.5 text-right font-mono tabular-nums
-                        ${item.amount < 0 ? 'text-red-400' : 'text-green-400'}`}>
-                        {item.amount < 0 ? '' : '+'}{item.amount.toFixed(2)} €
-                      </td>
-                      <td className="px-3 py-1.5 text-slate-400">{dateStr}</td>
-                      <td className="px-3 py-1.5 text-slate-500 text-xs">{item.sheet}</td>
-                    </tr>
-                  )
-                } else {
-                  const catLabel = categories.find(c => c.id === item.categoryId)?.label ?? item.categoryId
-                  return (
-                    <tr key={idx} className="hover:bg-slate-800/40">
-                      <td className="px-3 py-1.5 text-white">{item.description}</td>
-                      <td className="px-3 py-1.5 text-right font-mono tabular-nums text-red-400">
-                        -{item.amount.toFixed(2)} €
-                      </td>
-                      <td className="px-3 py-1.5 text-slate-400">{dateStr}</td>
-                      <td className="px-3 py-1.5 text-slate-400">{catLabel}</td>
-                    </tr>
-                  )
-                }
-              })
-            )}
+              if (activeTab === 'income') {
+                const memberName = item.uid
+                  ? (groupMembers.find(m => m.id === item.uid)?.name ?? '?')
+                  : '?'
+                return (
+                  <tr key={idx} className="hover:bg-slate-800/40">
+                    <td className="px-3 py-1.5 capitalize text-white">{memberName}</td>
+                    <td className={`px-3 py-1.5 text-right font-mono tabular-nums
+                      ${item.amount < 0 ? 'text-red-400' : 'text-green-400'}`}>
+                      {item.amount < 0 ? '' : '+'}{item.amount.toFixed(2)} €
+                    </td>
+                    <td className="px-3 py-1.5 text-slate-400">{dateStr}</td>
+                  </tr>
+                )
+              } else {
+                const splitNames = item.splitAmong
+                  .map(uid => groupMembers.find(m => m.id === uid)?.name ?? uid)
+                  .join(', ')
+                return (
+                  <tr key={idx} className="hover:bg-slate-800/40">
+                    <td className="px-3 py-1.5 text-white">{item.description}</td>
+                    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-red-400">
+                      -{item.amount.toFixed(2)} €
+                    </td>
+                    <td className="px-3 py-1.5 text-slate-400">{dateStr}</td>
+                    <td className="px-3 py-1.5 text-slate-400 text-xs">{splitNames || '—'}</td>
+                  </tr>
+                )
+              }
+            })}
           </tbody>
         </table>
       </div>
@@ -292,7 +422,14 @@ export default function ExcelImportModal({ onClose }) {
 
   const [step,       setStep]       = useState(0)
   const [parsed,     setParsed]     = useState(null)
-  const [nameMap,    setNameMap]    = useState({})  // excelName → uid | 'skip' | null
+  const [nameMap,    setNameMap]    = useState({})
+
+  // Period config (cutoff date + who splits in each era)
+  const [cutoffDate,   setCutoffDate]   = useState('')
+  const [prePeople,    setPrePeople]    = useState([])  // excel names for pre-cutoff era
+  const [postPeople,   setPostPeople]   = useState([])  // excel names for post-cutoff era
+  const [noDatePeriod, setNoDatePeriod] = useState('pre')
+
   const [importing,  setImporting]  = useState(false)
   const [progress,   setProgress]   = useState({ done: 0, total: 0 })
   const [importErrors, setImportErrors] = useState([])
@@ -309,12 +446,12 @@ export default function ExcelImportModal({ onClose }) {
     try {
       const result = await parseExcelFile(file)
       if (result.contributions.length === 0 && result.expenses.length === 0) {
-        setParseError('No se encontraron datos. Verifica que el archivo tiene el formato esperado (cabecera "persona" en columna D, fila 2).')
+        setParseError('No se encontraron datos. Verifica el formato del archivo (cabecera "persona" en columna D, fila 2).')
         return
       }
       setParsed(result)
 
-      // Auto-match names to group members (case-insensitive prefix)
+      // Auto-match names to group members
       const autoMap = {}
       for (const name of result.personNames) {
         const match = groupMembers.find(m => {
@@ -324,17 +461,50 @@ export default function ExcelImportModal({ onClose }) {
         autoMap[name] = match?.id ?? null
       }
       setNameMap(autoMap)
+
+      // Auto-detect periods
+      const detected = detectPeriods(result.contributions)
+      if (detected) {
+        setCutoffDate(detected.cutoffDate)
+        setPrePeople(detected.prePeople)
+        setPostPeople(detected.postPeople)
+      } else {
+        // No transition detected — everyone in both periods
+        setCutoffDate('')
+        setPrePeople(result.personNames)
+        setPostPeople(result.personNames)
+      }
+
       setStep(1)
     } catch (err) {
       setParseError('Error al procesar el archivo: ' + err.message)
     }
   }, [groupMembers])
 
+  // Resolve a list of excel person names → UIDs (excluding skipped/unassigned)
+  const resolveUids = useCallback((names) =>
+    names.map(n => nameMap[n]).filter(uid => uid && uid !== 'skip'),
+  [nameMap])
+
   // Derived preview lists
   const { incomeItems, expenseItems, skippedCount } = useMemo(() => {
     if (!parsed) return { incomeItems: [], expenseItems: [], skippedCount: 0 }
 
-    const allMemberIds = groupMembers.map(m => m.id)
+    const cutoff = cutoffDate ? new Date(cutoffDate) : null
+    const preUids  = resolveUids(prePeople)
+    const postUids = resolveUids(postPeople)
+    const allUids  = groupMembers.map(m => m.id)
+
+    const getSplit = (date) => {
+      if (!cutoff) return preUids.length ? preUids : allUids
+      if (!date)   return noDatePeriod === 'pre'
+        ? (preUids.length  ? preUids  : allUids)
+        : (postUids.length ? postUids : allUids)
+      return date < cutoff
+        ? (preUids.length  ? preUids  : allUids)
+        : (postUids.length ? postUids : allUids)
+    }
+
     const income = []
     let skipped = 0
 
@@ -358,13 +528,13 @@ export default function ExcelImportModal({ onClose }) {
       amount: e.amount,
       date: e.date,
       categoryId: guessCategoryId(e.description, categories),
-      splitAmong: allMemberIds,
+      splitAmong: getSplit(e.date),
       sheet: e.sheet,
       rowIdx: e.rowIdx,
     }))
 
     return { incomeItems: income, expenseItems: expense, skippedCount: skipped }
-  }, [parsed, nameMap, groupMembers, categories])
+  }, [parsed, nameMap, cutoffDate, prePeople, postPeople, noDatePeriod, groupMembers, categories, resolveUids])
 
   const totalValid = incomeItems.length + expenseItems.length
   const hasAssigned = Object.values(nameMap).some(v => v && v !== 'skip')
@@ -377,7 +547,6 @@ export default function ExcelImportModal({ onClose }) {
     const errors = []
     let done = 0
 
-    // Write in batches of 490 (Firestore limit is 500)
     const BATCH_SIZE = 490
     for (let start = 0; start < allItems.length; start += BATCH_SIZE) {
       const batch = writeBatch(db)
@@ -423,7 +592,7 @@ export default function ExcelImportModal({ onClose }) {
           }
           done++
         } catch (err) {
-          errors.push(`Fila ${item.rowIdx} (${item.sheet}): ${err.message}`)
+          errors.push(`Fila ${item.rowIdx}: ${err.message}`)
         }
       }
 
@@ -521,6 +690,14 @@ export default function ExcelImportModal({ onClose }) {
                   groupMembers={groupMembers}
                   contributions={parsed.contributions}
                   expenses={parsed.expenses}
+                  cutoffDate={cutoffDate}
+                  setCutoffDate={setCutoffDate}
+                  prePeople={prePeople}
+                  setPrePeople={setPrePeople}
+                  postPeople={postPeople}
+                  setPostPeople={setPostPeople}
+                  noDatePeriod={noDatePeriod}
+                  setNoDatePeriod={setNoDatePeriod}
                 />
               )}
               {step === 2 && (
