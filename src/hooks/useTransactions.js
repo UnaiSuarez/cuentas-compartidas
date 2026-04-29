@@ -54,6 +54,7 @@ export function useTransactions() {
 
       await addDoc(collection(db, 'groups', groupId, 'transactions'), {
         type:          data.type,
+        paymentMode:   data.paymentMode || 'individual',
         amount:        Number(data.amount),
         category:      data.category || 'other',
         categoryLabel,
