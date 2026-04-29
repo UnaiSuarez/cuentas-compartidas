@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence }     from 'framer-motion'
 import {
   Plus, Search, Pencil, Trash2,
-  TrendingUp, TrendingDown, Landmark, X, Download,
+  TrendingUp, TrendingDown, Landmark, X, Download, Upload,
   ChevronDown, ArrowDownUp, Calendar,
 } from 'lucide-react'
 import { useApp }                      from '../../context/AppContext'
@@ -11,6 +11,7 @@ import { exportToExcel, exportToPDF, exportToCSV } from '../../utils/exporters'
 import { formatCurrency, formatDate }  from '../../utils/formatters'
 import { addRipple, addHoverParticles, staggerReveal } from '../../utils/animeHelpers'
 import TransactionForm                 from './TransactionForm'
+import ExcelImportModal                from '../Import/ExcelImportModal'
 
 const DATE_FILTERS = [
   { label: 'Todo',        value: 'all'   },
@@ -72,6 +73,7 @@ export default function TransactionList() {
   const [specificDate, setSpecificDate] = useState('')        // 'YYYY-MM-DD' | ''
   const [deleting,     setDeleting]     = useState(null)
   const [showExport,   setShowExport]   = useState(false)
+  const [showImport,   setShowImport]   = useState(false)
 
   const listRef = useRef(null)
 
@@ -206,6 +208,17 @@ export default function TransactionList() {
             )}
           </div>
 
+          {/* Importar desde Excel */}
+          <button
+            onClick={() => setShowImport(true)}
+            className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300
+                       px-3 py-2 rounded-xl text-sm transition-all"
+            title="Importar desde Excel"
+          >
+            <Upload size={15}/>
+            <span className="hidden sm:inline">Importar</span>
+          </button>
+
           {/* Nueva transacción */}
           <AnimatedButton
             data-tutorial="new-transaction"
@@ -227,6 +240,13 @@ export default function TransactionList() {
             onClose={() => { setShowForm(false); setEditData(null) }}
             editData={editData}
           />
+        )}
+      </AnimatePresence>
+
+      {/* ── Modal importar Excel */}
+      <AnimatePresence>
+        {showImport && (
+          <ExcelImportModal onClose={() => setShowImport(false)} />
         )}
       </AnimatePresence>
 
