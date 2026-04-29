@@ -30,6 +30,16 @@ export function calculateBalances(transactions, users) {
     if (participantes.length === 0) return
     const partePorPersona = monto / participantes.length
 
+    // Gasto externo: el pagador adelantó de su bolsillo; los demás le reembolsan su parte.
+    // El pool colectivo no cambia (crédito al pagador cancela el débito total).
+    if (tx.paymentMode === 'external') {
+      if (balances[pagado_por] !== undefined) balances[pagado_por] += monto
+      participantes.forEach(uid => {
+        if (balances[uid] !== undefined) balances[uid] -= partePorPersona
+      })
+      return
+    }
+
     // Todos los gastos (individual o común) debitan solo a los participantes.
     // paidBy es informativo; no genera crédito para el pagador.
     participantes.forEach(uid => {
@@ -80,7 +90,8 @@ export function calculateGroupSummary(transactions, users) {
     const tipo  = tx.type   || tx.tipo
     const monto = tx.amount ?? tx.monto
     if (tipo === 'income' || tipo === 'ingreso') totalIngresos += monto
-    else                                          totalGastos   += monto
+    else if (tx.paymentMode !== 'external')       totalGastos   += monto
+    // gastos externos no afectan el pool colectivo
   })
 
   const balances     = calculateBalances(transactions, users)
@@ -124,6 +135,13 @@ export function calculateBalanceBreakdown(transactions, users) {
         data[paidBy].contributed += tx.amount
         poolBalance += tx.amount
       }
+    } else if (tx.paymentMode === 'external') {
+      // Pagador acreditado sin tocar pool; participantes debitados.
+      // Σ Δbalance = amount − amount = 0 → poolBalance sin cambio.
+      if (paidBy && data[paidBy]) data[paidBy].contributed += tx.amount
+      participants.forEach(pid => {
+        if (data[pid]) data[pid].expenseShare += share
+      })
     } else {
       poolBalance -= tx.amount
       if (paidBy && paidBy !== 'common' && data[paidBy]) {

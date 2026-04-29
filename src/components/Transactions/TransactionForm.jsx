@@ -12,7 +12,7 @@ const today = () => new Date().toISOString().split('T')[0]
 const MODES = { EXPENSE: 'expense', INCOME: 'income', COMMON: 'common' }
 
 const EMPTY_FORM = {
-  mode:        MODES.EXPENSE,
+  mode:        MODES.COMMON,
   amount:      '',
   category:    '',
   description: '',
@@ -29,6 +29,10 @@ export default function TransactionForm({ onClose, editData = null }) {
 
   // Deudas del usuario actual según los pagos óptimos
   const myDebts = summary.pagosOptimos.filter(p => p.de === userProfile?.id)
+
+  const [expenseType, setExpenseType] = useState(() =>
+    editData?.paymentMode === 'external' ? 'external' : 'internal'
+  )
 
   const [form, setForm] = useState(() => {
     if (editData) {
@@ -78,13 +82,14 @@ export default function TransactionForm({ onClose, editData = null }) {
   async function handleSubmit(e) {
     e.preventDefault()
 
-    const isCommon  = form.mode === MODES.COMMON
-    const isIncome  = form.mode === MODES.INCOME
-    const isExpense = form.mode === MODES.EXPENSE
+    const isCommon    = form.mode === MODES.COMMON
+    const isIncome    = form.mode === MODES.INCOME
+    const isExpense   = form.mode === MODES.EXPENSE
+    const isExternal  = isExpense && expenseType === 'external'
 
     const payload = {
       type:         isIncome ? 'income' : 'expense',
-      paymentMode:  isCommon ? 'common' : 'individual',
+      paymentMode:  isCommon ? 'common' : isExternal ? 'external' : 'individual',
       amount:       parseFloat(form.amount),
       category:     form.category || 'other',
       description:  form.description.trim(),
@@ -105,6 +110,9 @@ export default function TransactionForm({ onClose, editData = null }) {
         } else if (isIncome) {
           const name = groupMembers.find(m => m.id === form.paidBy)?.name || 'Alguien'
           msg = `💰 ${name} añadió un ingreso de ${formatCurrency(parseFloat(form.amount))}${catLabel ? ` en ${catLabel}` : ''}`
+        } else if (isExternal) {
+          const name = groupMembers.find(m => m.id === form.paidBy)?.name || 'Alguien'
+          msg = `💸 ${name} hizo un pago externo de ${formatCurrency(parseFloat(form.amount))}${catLabel ? ` en ${catLabel}` : ''}`
         } else {
           const name = groupMembers.find(m => m.id === form.paidBy)?.name || 'Alguien'
           msg = `💳 ${name} registró un gasto de ${formatCurrency(parseFloat(form.amount))}${catLabel ? ` en ${catLabel}` : ''}`
@@ -115,9 +123,10 @@ export default function TransactionForm({ onClose, editData = null }) {
     } catch (_) {}
   }
 
-  const isCommon  = form.mode === MODES.COMMON
-  const isIncome  = form.mode === MODES.INCOME
-  const isExpense = form.mode === MODES.EXPENSE
+  const isCommon   = form.mode === MODES.COMMON
+  const isIncome   = form.mode === MODES.INCOME
+  const isExpense  = form.mode === MODES.EXPENSE
+  const isExternal = isExpense && expenseType === 'external'
 
   const parteEstimada = !isIncome && form.amount && form.splitAmong.length
     ? parseFloat(form.amount) / form.splitAmong.length
@@ -145,11 +154,11 @@ export default function TransactionForm({ onClose, editData = null }) {
       <div className="grid grid-cols-3 rounded-xl overflow-hidden border border-slate-700/60 mb-4">
         <button
           type="button"
-          onClick={() => set('mode', MODES.EXPENSE)}
+          onClick={() => set('mode', MODES.COMMON)}
           className={`flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium transition-all
-                     ${isExpense ? 'bg-red-500/20 text-red-400' : 'text-slate-400 hover:text-white'}`}
+                     ${isCommon ? 'bg-blue-500/20 text-blue-400' : 'text-slate-400 hover:text-white'}`}
         >
-          <TrendingDown size={14}/> Gasto
+          <Users size={14}/> Común
         </button>
         <button
           type="button"
@@ -162,17 +171,49 @@ export default function TransactionForm({ onClose, editData = null }) {
         </button>
         <button
           type="button"
-          onClick={() => set('mode', MODES.COMMON)}
+          onClick={() => set('mode', MODES.EXPENSE)}
           className={`flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium transition-all
-                     ${isCommon ? 'bg-blue-500/20 text-blue-400' : 'text-slate-400 hover:text-white'}`}
+                     ${isExpense ? 'bg-red-500/20 text-red-400' : 'text-slate-400 hover:text-white'}`}
         >
-          <Users size={14}/> Común
+          <TrendingDown size={14}/> Gasto Partido
         </button>
       </div>
 
       {isCommon && (
         <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 text-xs text-blue-300 mb-4">
           El gasto sale del fondo común. Nadie adelanta dinero individualmente; se divide entre los participantes.
+        </div>
+      )}
+
+      {isExpense && (
+        <div className="mb-4">
+          <div className="grid grid-cols-2 rounded-xl overflow-hidden border border-slate-700/60">
+            <button
+              type="button"
+              onClick={() => setExpenseType('internal')}
+              className={`py-2 text-sm font-medium transition-all
+                         ${expenseType === 'internal' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}
+            >
+              Interno
+            </button>
+            <button
+              type="button"
+              onClick={() => setExpenseType('external')}
+              className={`py-2 text-sm font-medium transition-all border-l border-slate-700/60
+                         ${expenseType === 'external' ? 'bg-orange-500/20 text-orange-400' : 'text-slate-400 hover:text-white'}`}
+            >
+              Externo
+            </button>
+          </div>
+          {expenseType === 'internal' ? (
+            <p className="text-xs text-slate-500 mt-2 px-1">
+              El gasto sale del fondo colectivo. Los participantes asumen su parte.
+            </p>
+          ) : (
+            <p className="text-xs text-orange-300/80 mt-2 px-1">
+              El pagador adelantó de su bolsillo. Los demás le reembolsan su parte sin tocar el fondo colectivo.
+            </p>
+          )}
         </div>
       )}
 
@@ -326,6 +367,8 @@ export default function TransactionForm({ onClose, editData = null }) {
                         ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
                         : isCommon
                         ? 'bg-blue-700 hover:bg-blue-600 text-white'
+                        : isExternal
+                        ? 'bg-orange-600 hover:bg-orange-500 text-white'
                         : 'bg-blue-600 hover:bg-blue-500 text-white'
                       }`}
         >

@@ -354,15 +354,16 @@ export default function TransactionList() {
       ) : (
         <div ref={listRef} className="space-y-2">
           {sorted.map((tx) => {
-            const isIncome = tx.type === 'income'
-            const isCommon = tx.paidBy === 'common' || tx.paymentMode === 'common'
-            const txDate   = tx.date?.toDate ? tx.date.toDate() : new Date(tx.date)
+            const isIncome   = tx.type === 'income'
+            const isCommon   = tx.paidBy === 'common' || tx.paymentMode === 'common'
+            const isExternal = tx.paymentMode === 'external'
+            const txDate     = tx.date?.toDate ? tx.date.toDate() : new Date(tx.date)
 
             const ItemIcon   = isCommon ? Landmark : isIncome ? TrendingUp : TrendingDown
-            const iconBg     = isCommon ? 'bg-blue-500/15'    : isIncome ? 'bg-emerald-500/15' : 'bg-red-500/15'
-            const iconColor  = isCommon ? 'text-blue-400'     : isIncome ? 'text-emerald-400'  : 'text-red-400'
-            const borderLeft = isCommon ? 'border-l-blue-500/50' : isIncome ? 'border-l-emerald-500/50' : 'border-l-red-500/50'
-            const amountColor = isCommon ? 'text-blue-400'   : isIncome ? 'text-emerald-400'  : 'text-red-400'
+            const iconBg     = isCommon ? 'bg-blue-500/15' : isIncome ? 'bg-emerald-500/15' : isExternal ? 'bg-orange-500/15' : 'bg-red-500/15'
+            const iconColor  = isCommon ? 'text-blue-400'  : isIncome ? 'text-emerald-400'  : isExternal ? 'text-orange-400'  : 'text-red-400'
+            const borderLeft = isCommon ? 'border-l-blue-500/50' : isIncome ? 'border-l-emerald-500/50' : isExternal ? 'border-l-orange-500/50' : 'border-l-red-500/50'
+            const amountColor = isCommon ? 'text-blue-400' : isIncome ? 'text-emerald-400'  : isExternal ? 'text-orange-400'  : 'text-red-400'
 
             return (
               <div
@@ -389,6 +390,8 @@ export default function TransactionList() {
                     <span className="text-xs text-slate-700">•</span>
                     {isCommon
                       ? <span className="text-xs px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-400 font-medium">Fondo común</span>
+                      : isExternal
+                      ? <><span className="text-xs text-slate-500">{getMemberName(tx.paidBy)}</span><span className="text-xs px-1.5 py-0.5 rounded-md bg-orange-500/15 text-orange-400 font-medium ml-1">Externo</span></>
                       : <span className="text-xs text-slate-500">{getMemberName(tx.paidBy)}</span>
                     }
                     <span className="text-xs text-slate-700">•</span>
