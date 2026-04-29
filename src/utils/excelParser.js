@@ -162,7 +162,7 @@ function parseGastosPisoFormat(workbook) {
       const fechaGasto  = cols.expFechaIdx !== -1 ? row[cols.expFechaIdx] : null
       const rawDesc     = cols.expDescIdx  !== -1 ? row[cols.expDescIdx]  : null
 
-      if (dineroGasto != null && !isNaN(Number(dineroGasto)) && Number(dineroGasto) > 0) {
+      if (dineroGasto != null && !isNaN(Number(dineroGasto)) && Number(dineroGasto) >= 0) {
         const excelCategory = rawCat && typeof rawCat === 'string' ? rawCat.trim() : null
         const extraDesc = rawDesc && typeof rawDesc === 'string' ? rawDesc.trim() : null
 
@@ -186,6 +186,9 @@ function parseGastosPisoFormat(workbook) {
     personsBySheet[sheetName] = [...sheetPersons]
   }
 
+  interpolateDates(contributions)
+  interpolateDates(expenses)
+
   return {
     contributions,
     expenses,
@@ -201,6 +204,28 @@ function toDate(val) {
   if (val instanceof Date) return isNaN(val.getTime()) ? null : val
   const d = new Date(val)
   return isNaN(d.getTime()) ? null : d
+}
+
+// Fill null dates with the midpoint between the previous and next dated entry
+function interpolateDates(items) {
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].date != null) continue
+    let prev = null
+    for (let j = i - 1; j >= 0; j--) {
+      if (items[j].date != null) { prev = items[j].date; break }
+    }
+    let next = null
+    for (let j = i + 1; j < items.length; j++) {
+      if (items[j].date != null) { next = items[j].date; break }
+    }
+    if (prev && next) {
+      items[i].date = new Date((prev.getTime() + next.getTime()) / 2)
+    } else if (prev) {
+      items[i].date = prev
+    } else if (next) {
+      items[i].date = next
+    }
+  }
 }
 
 // ─── Period auto-detection ────────────────────────────────────────────────────
