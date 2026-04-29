@@ -25,7 +25,20 @@
       "Bash(git -C /e/espaciSeguroClaude/cuentas-compartidas commit -m 'docs: regenerar PDFs completos y detallados \\(46-60 KB\\) *)",
       "Bash(git *)",
       "WebFetch(domain:animejs.com)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(npx vite *)",
+      "Bash(npx create-expo-app@latest cuentas-compartidas-mobile --template blank)",
+      "Bash(npx expo *)",
+      "Bash(cp \"E:/espaciSeguroClaude/cuentas-compartidas/src/utils/calculateSettlement.js\" \"E:/espaciSeguroClaude/cuentas-compartidas-mobile/src/utils/calculateSettlement.js\")",
+      "Bash(cp \"E:/espaciSeguroClaude/cuentas-compartidas/src/utils/formatters.js\" \"E:/espaciSeguroClaude/cuentas-compartidas-mobile/src/utils/formatters.js\")",
+      "Bash(cp \"E:/espaciSeguroClaude/cuentas-compartidas/src/hooks/useSettlement.js\" \"E:/espaciSeguroClaude/cuentas-compartidas-mobile/src/hooks/useSettlement.js\")",
+      "Bash(mkdir -p \"E:/espaciSeguroClaude/cuentas-compartidas-mobile/src/utils\" \"E:/espaciSeguroClaude/cuentas-compartidas-mobile/src/hooks\" \"E:/espaciSeguroClaude/cuentas-compartidas-mobile/src/config\" \"E:/espaciSeguroClaude/cuentas-compartidas-mobile/src/context\")",
+      "Bash(cp \"E:/espaciSeguroClaude/cuentas-compartidas/src/utils/calculateSettlement.js\" \"E:/espaciSeguroClaude/cuentas-compartidas-mobile/src/utils/\")",
+      "Bash(cp \"E:/espaciSeguroClaude/cuentas-compartidas/src/utils/formatters.js\" \"E:/espaciSeguroClaude/cuentas-compartidas-mobile/src/utils/\")",
+      "Bash(cp \"E:/espaciSeguroClaude/cuentas-compartidas/src/hooks/useSettlement.js\" \"E:/espaciSeguroClaude/cuentas-compartidas-mobile/src/hooks/\")",
+      "Bash(python *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173)",
+      "Bash(npx eslint *)"
     ]
   }
 }

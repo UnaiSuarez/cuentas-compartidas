@@ -1,18 +1,23 @@
 /**
- * Escena de avatares con anime.js: bounce (happy), shake (dead), float (normal).
- * Usa createMotionPath para una moneda orbital y splitText en el encabezado.
+ * Escena de avatares con anime.js:
+ * - happy: movimiento errático energético (X+Y)
+ * - dead:  casi inmóvil, micro-temblor
+ * - normal: flotación suave en 2D
+ *
+ * Monedas € flotantes cuya cantidad es proporcional al saldo del usuario activo.
+ * Cada moneda tiene trayectoria completamente aleatoria.
  */
 
-import { useRef, useEffect } from 'react'
-import { animate, stagger, svg, splitText, engine } from 'animejs'
+import { useRef, useEffect, useMemo } from 'react'
+import { animate, stagger, splitText, engine } from 'animejs'
 import { getAvatarByKey } from '../../assets/avatars'
 
 export default function AvatarScene({ users, balances, activeUser }) {
   const headingRef    = useRef(null)
-  const coinRef       = useRef(null)
-  const pathRef       = useRef(null)
-  const avatarRefsMap = useRef(new Map())   // uid → wrapper DOM el
+  const avatarRefsMap = useRef(new Map())
   const loopAnims     = useRef([])
+  const coinRefs      = useRef([])
+  const coinAnimRefs  = useRef([])
 
   function getAvatarState(userId) {
     const bal = balances[userId] ?? 0
@@ -24,11 +29,23 @@ export default function AvatarScene({ users, balances, activeUser }) {
   // Clave compacta que solo cambia cuando un avatar CAMBIA DE ESTADO
   const stateKey = users.map(u => getAvatarState(u.id)[0]).join('')
 
+  // Número de monedas proporcional al saldo positivo del usuario activo
+  const activeBalance = activeUser ? (balances[activeUser.id] ?? 0) : 0
+  const coinCount = Math.max(1, Math.min(8, activeBalance > 0 ? Math.ceil(activeBalance / 10) : 1))
+
+  // Posiciones y tamaños iniciales estables para hasta 8 monedas
+  const coinData = useMemo(() =>
+    Array.from({ length: 8 }, () => ({
+      left: 8  + Math.random() * 84,   // 8–92% del ancho
+      top:  10 + Math.random() * 72,   // 10–82% del alto
+      size: 13 + Math.floor(Math.random() * 12),  // 13–25px
+    }))
+  , []) // eslint-disable-line
+
   // ── Entrada: pop-in escalonado + splitText en el heading
   useEffect(() => {
     if (!users.length) return
 
-    // splitText accesible en el encabezado
     if (headingRef.current) {
       try {
         const { chars } = splitText(headingRef.current, { chars: { accessible: true } })
@@ -43,7 +60,6 @@ export default function AvatarScene({ users, balances, activeUser }) {
       } catch (_) {}
     }
 
-    // Pop-in escalonado de los wrappers de avatar
     const els = users.map(u => avatarRefsMap.current.get(u.id)).filter(Boolean)
     if (els.length) {
       els.forEach(el => { el.style.opacity = '0'; el.style.transform = 'scale(0.35)' })
@@ -55,25 +71,36 @@ export default function AvatarScene({ users, balances, activeUser }) {
     }
   }, [users.length]) // eslint-disable-line
 
-  // ── Moneda orbital siguiendo un createMotionPath
+  // ── Monedas con movimiento totalmente aleatorio, cantidad según saldo
   useEffect(() => {
-    if (!coinRef.current || !pathRef.current) return
-
-    // engine.speed: velocidad global mientras la escena está activa (ligeramente realzada)
     engine.speed = 1.05
-    const anim = animate(coinRef.current, {
-      ...svg.createMotionPath(pathRef.current),
-      duration: 11000,
-      loop:     true,
-      easing:   'linear',
+
+    coinAnimRefs.current.forEach(a => { try { a?.cancel() } catch (_) {} })
+    coinAnimRefs.current = []
+
+    coinRefs.current.slice(0, coinCount).forEach((el, idx) => {
+      if (!el) return
+      const r  = () => (Math.random() - 0.5) * 200  // ±100px
+      const ry = () => (Math.random() - 0.5) * 90   // ±45px
+      const anim = animate(el, {
+        translateX: [0, r(), r(), r(), r(), r(), 0],
+        translateY: [0, ry(), ry(), ry(), ry(), ry(), 0],
+        opacity:    [0.1, 0.4, 0.15, 0.35, 0.2, 0.3, 0.1],
+        duration:   7000 + Math.random() * 9000,
+        delay:      idx * 380,
+        loop:       true,
+        easing:     'easeInOutSine',
+      })
+      coinAnimRefs.current.push(anim)
     })
+
     return () => {
       engine.speed = 1
-      anim.cancel()
+      coinAnimRefs.current.forEach(a => { try { a?.cancel() } catch (_) {} })
     }
-  }, []) // eslint-disable-line
+  }, [coinCount]) // eslint-disable-line
 
-  // ── Animaciones en bucle por estado (se reinician solo al cambiar de estado)
+  // ── Animaciones de movimiento libre según estado
   useEffect(() => {
     loopAnims.current.forEach(a => { try { a?.cancel() } catch (_) {} })
     loopAnims.current = []
@@ -84,21 +111,33 @@ export default function AvatarScene({ users, balances, activeUser }) {
       const state = getAvatarState(user.id)
 
       const anim = state === 'happy'
+        // Movimiento energético y errático en 2D
         ? animate(el, {
-            translateY: [0, -16, -5, -13, 0],
-            duration:   900,  delay: i * 160,
-            loop: true, easing: 'easeInOutSine',
+            translateX: [0, 22 + i * 6, -16, 28, -12, 18, 0],
+            translateY: [0, -22, -6, -19, -4, -15, 0],
+            duration:   820 + i * 90,
+            delay:      i * 160,
+            loop:       true,
+            easing:     'easeInOutSine',
           })
         : state === 'dead'
+        // Casi inmóvil — micro-temblor muy leve
         ? animate(el, {
-            translateX: [0, -7, 7, -4, 4, -2, 2, 0],
-            duration:   1400, delay: i * 260,
-            loop: true, loopDelay: 1100, easing: 'easeInOutSine',
+            translateX: [0, -2, 2, -1, 1, 0],
+            translateY: [0, 1, 2, 1, 0],
+            duration:   3200,
+            loop:       true,
+            loopDelay:  1800,
+            easing:     'easeInOutSine',
           })
+        // Flotación suave con deriva horizontal
         : animate(el, {
-            translateY: [0, -(5 + i * 1.5), 0],
-            duration:   2600 + i * 280, delay: i * 420,
-            loop: true, easing: 'easeInOutSine',
+            translateX: [0, 11 + i * 3, -7, 14, -5, 0],
+            translateY: [0, -(5 + i * 1.5), -1, -(8 + i), -2, 0],
+            duration:   2700 + i * 310,
+            delay:      i * 420,
+            loop:       true,
+            easing:     'easeInOutSine',
           })
 
       loopAnims.current.push(anim)
@@ -111,34 +150,28 @@ export default function AvatarScene({ users, balances, activeUser }) {
 
   return (
     <div className="glass rounded-2xl p-6 overflow-hidden relative">
-      {/* Path SVG para createMotionPath — invisible pero con geometría real */}
-      <svg
-        aria-hidden="true"
-        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', overflow: 'visible' }}
-      >
-        <path
-          ref={pathRef}
-          d="M 60 25 C 140 0 260 0 310 25 S 370 65 310 85 C 240 108 120 108 60 85 S -10 50 60 25"
-          fill="none" stroke="none"
-        />
-      </svg>
+      {/* Monedas flotantes — una por cada ~10€ de saldo positivo */}
+      {Array.from({ length: coinCount }, (_, i) => {
+        const d = coinData[i]
+        return (
+          <div
+            key={i}
+            ref={el => { coinRefs.current[i] = el }}
+            aria-hidden="true"
+            className="absolute pointer-events-none select-none font-bold text-slate-400/25"
+            style={{ left: `${d.left}%`, top: `${d.top}%`, fontSize: `${d.size}px` }}
+          >
+            €
+          </div>
+        )
+      })}
 
-      {/* Moneda que sigue el path */}
-      <div
-        ref={coinRef}
-        aria-hidden="true"
-        className="absolute pointer-events-none select-none text-slate-400/25 font-bold"
-        style={{ top: '-8px', left: '-8px', fontSize: '18px' }}
-      >
-        €
-      </div>
-
-      <p ref={headingRef} className="text-slate-400 text-xs uppercase tracking-wider mb-4 text-center">
+      <p ref={headingRef} className="text-slate-400 text-xs uppercase tracking-wider mb-4 text-center relative z-10">
         Estado del grupo
       </p>
 
-      <div className="flex justify-center items-end gap-6 flex-wrap">
-        {users.map((user, i) => {
+      <div className="flex justify-center items-end gap-6 flex-wrap relative z-10">
+        {users.map((user) => {
           const AvatarComp = getAvatarByKey(user.avatar)
           const state      = getAvatarState(user.id)
           const isActive   = activeUser?.id === user.id

@@ -65,13 +65,11 @@ export default function SettlementPage() {
     prevPagos.current = count
   }, [summary.pagosOptimos.length])
 
-  // Scroll reveal para secciones
+  // Scroll reveal solo para la sección de saldos (siempre montada)
   const balanceSectionRef = useRef(null)
-  const paymentSectionRef = useRef(null)
   useEffect(() => {
     const c1 = revealOnScroll(balanceSectionRef.current, { delay: 0 })
-    const c2 = revealOnScroll(paymentSectionRef.current, { delay: 80 })
-    return () => { c1(); c2() }
+    return () => { c1() }
   }, [])
 
   return (
@@ -105,7 +103,7 @@ export default function SettlementPage() {
         </motion.div>
       )}
 
-      {isCreditor && !isDebtor && (
+      {isCreditor && (
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -162,7 +160,13 @@ export default function SettlementPage() {
 
       {/* Pagos óptimos con flecha SVG animada */}
       {summary.pagosOptimos.length > 0 ? (
-        <div ref={paymentSectionRef} data-tutorial="optimal-payments" className="glass rounded-2xl p-5" style={{ opacity: 0 }}>
+        <motion.div
+          data-tutorial="optimal-payments"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45 }}
+          className="glass rounded-2xl p-5"
+        >
           <p className="text-slate-400 text-xs uppercase tracking-wider mb-1">Pagos a realizar</p>
           <p className="text-slate-500 text-xs mb-4">
             Añade el importe como ingreso y el saldo se ajustará solo.
@@ -172,7 +176,7 @@ export default function SettlementPage() {
               const isMe = userProfile?.id === p.de
               return (
                 <motion.div
-                  key={i}
+                  key={`${p.de}-${p.a}`}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.1 }}
@@ -200,7 +204,7 @@ export default function SettlementPage() {
               )
             })}
           </div>
-        </div>
+        </motion.div>
       ) : (
         <div className="glass rounded-2xl p-8 text-center">
           <p className="text-4xl mb-2">🎉</p>
