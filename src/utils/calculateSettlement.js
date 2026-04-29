@@ -17,7 +17,7 @@ export function calculateBalances(transactions, users) {
 
   transactions.forEach(tx => {
     const tipo           = tx.type       || tx.tipo
-    const monto          = tx.amount     || tx.monto
+    const monto          = tx.amount     ?? tx.monto
     const pagado_por     = tx.paidBy     || tx.pagado_por
     const dividido_entre = tx.splitAmong || tx.dividido_entre
 
@@ -78,7 +78,7 @@ export function calculateGroupSummary(transactions, users) {
 
   transactions.forEach(tx => {
     const tipo  = tx.type   || tx.tipo
-    const monto = tx.amount || tx.monto
+    const monto = tx.amount ?? tx.monto
     if (tipo === 'income' || tipo === 'ingreso') totalIngresos += monto
     else                                          totalGastos   += monto
   })
