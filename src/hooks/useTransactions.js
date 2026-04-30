@@ -25,9 +25,10 @@ import {
 } from 'firebase/firestore'
 import { db } from '../config/firebase'
 import { useApp } from '../context/AppContext'
+import { notifyNewTransaction, checkBalancesAndNotify } from '../utils/pushNotifications'
 
 export function useTransactions() {
-  const { groupId, userProfile, categories } = useApp()
+  const { groupId, userProfile, categories, groupMembers, transactions } = useApp()
   const [submitting, setSubmitting] = useState(false)
   const [error,      setError]      = useState(null)
 
@@ -52,10 +53,11 @@ export function useTransactions() {
 
       const dateObj = data.date instanceof Date ? data.date : new Date(data.date)
 
+      const amount = Number(data.amount)
       await addDoc(collection(db, 'groups', groupId, 'transactions'), {
         type:          data.type,
         paymentMode:   data.paymentMode || 'individual',
-        amount:        Number(data.amount),
+        amount,
         category:      data.category || 'other',
         categoryLabel,
         description:   data.description || '',
@@ -66,6 +68,15 @@ export function useTransactions() {
         updatedAt:     serverTimestamp(),
         createdBy:     userProfile?.id || '',
       })
+
+      // Notificar a los miembros del grupo con app móvil
+      const normalizedTx = {
+        type: data.type, paymentMode: data.paymentMode || 'individual',
+        amount, categoryLabel, category: data.category,
+        paidBy: data.paidBy, splitAmong: data.splitAmong || [],
+      }
+      await notifyNewTransaction(normalizedTx, userProfile.name, groupMembers, userProfile.id)
+      await checkBalancesAndNotify([...transactions, normalizedTx], groupMembers)
     } catch (e) {
       setError('Error al guardar la transacción: ' + e.message)
       throw e

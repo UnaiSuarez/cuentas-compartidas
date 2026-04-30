@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore'
 import { auth, db } from '../config/firebase'
 import { useApp } from '../context/AppContext'
+import { notifyNewMember } from '../utils/pushNotifications'
 
 export function useAuth() {
   const { onProfileCreated } = useApp()
@@ -132,6 +133,14 @@ export function useAuth() {
         throw new Error('Grupo lleno')
       }
 
+      // Obtener los miembros existentes ANTES de añadir al nuevo (para sus tokens)
+      const existingMemberDocs = await Promise.all(
+        groupData.memberIds.map(id => getDoc(doc(db, 'users', id)))
+      )
+      const existingMembers = existingMemberDocs
+        .filter(d => d.exists())
+        .map(d => ({ id: d.id, ...d.data() }))
+
       await updateDoc(groupDoc.ref, {
         memberIds: arrayUnion(uid),
         updatedAt: serverTimestamp(),
@@ -144,6 +153,8 @@ export function useAuth() {
 
       const profileSnap = await getDoc(doc(db, 'users', uid))
       const profile = { id: uid, ...profileSnap.data() }
+
+      await notifyNewMember(profile.name || 'Alguien', existingMembers, groupData.name)
       await onProfileCreated(profile, groupDoc.id)
 
       return groupDoc.id

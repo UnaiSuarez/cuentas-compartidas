@@ -18,9 +18,10 @@ import {
 } from 'firebase/firestore'
 import { db } from '../config/firebase'
 import { useApp } from '../context/AppContext'
+import { notifyNewMessage, notifyPaymentReminder } from '../utils/pushNotifications'
 
 export function useChat() {
-  const { groupId, userProfile, messages } = useApp()
+  const { groupId, userProfile, messages, groupMembers } = useApp()
   const [sending, setSending] = useState(false)
 
   /**
@@ -32,14 +33,15 @@ export function useChat() {
     setSending(true)
     try {
       await addDoc(collection(db, 'groups', groupId, 'messages'), {
-        type:             'message',
-        text:             text.trim(),
-        sender:           userProfile.id,
-        senderName:       userProfile.name,
-        senderAvatar:     userProfile.avatar,
-        readBy:           [userProfile.id], // el remitente ya lo ha leído
-        createdAt:        serverTimestamp(),
+        type:         'message',
+        text:         text.trim(),
+        sender:       userProfile.id,
+        senderName:   userProfile.name,
+        senderAvatar: userProfile.avatar,
+        readBy:       [userProfile.id],
+        createdAt:    serverTimestamp(),
       })
+      await notifyNewMessage(userProfile.name, text.trim(), groupMembers, userProfile.id)
     } finally {
       setSending(false)
     }
@@ -54,8 +56,9 @@ export function useChat() {
    */
   async function sendPaymentReminder(fromUserId, toUserId, amount, members) {
     if (!groupId) return
-    const fromName = members.find(m => m.id === fromUserId)?.name || 'Alguien'
-    const toName   = members.find(m => m.id === toUserId)?.name   || 'alguien'
+    const allMembers = members?.length ? members : groupMembers
+    const fromName   = allMembers.find(m => m.id === fromUserId)?.name || 'Alguien'
+    const toName     = allMembers.find(m => m.id === toUserId)?.name   || 'alguien'
 
     await addDoc(collection(db, 'groups', groupId, 'messages'), {
       type:       'payment_reminder',
@@ -68,6 +71,10 @@ export function useChat() {
       amount,
       createdAt:  serverTimestamp(),
     })
+
+    const fromMember = allMembers.find(m => m.id === fromUserId)
+    const toMember   = allMembers.find(m => m.id === toUserId)
+    await notifyPaymentReminder(fromMember, toMember, amount)
   }
 
   /**
