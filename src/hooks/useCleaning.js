@@ -62,7 +62,7 @@ export function useCleaning() {
 
   /** Marca un slot como limpiado. */
   async function markDone(slot) {
-    if (!groupId || !userProfile) return
+    if (!groupId || !userProfile || !slot.assignedTo) return
     setSubmitting(true)
     setError(null)
     try {
@@ -82,6 +82,39 @@ export function useCleaning() {
       })
     } catch (e) {
       setError('Error al marcar como hecho: ' + e.message)
+      throw e
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  /** Registra una limpieza pasada aunque ese día no estuviese en el calendario configurado. */
+  async function addHistoricalCleaning(date, slotId) {
+    if (!groupId || !userProfile) return
+    const configuredZone = cleaningSettings.zones?.find(zone => zone.id === slotId)
+    const slot = slotsForDate(date, { ...cleaningSettings, startDate: cleaningSettings.startDate || date })
+      .find(candidate => candidate.slotId === slotId)
+      || (slotId === 'day'
+        ? { slotId: 'day', zoneId: null, zoneLabel: 'Limpieza general', zoneIcon: '🧹' }
+        : configuredZone && { slotId: configuredZone.id, zoneId: configuredZone.id, zoneLabel: configuredZone.label, zoneIcon: configuredZone.icon })
+    if (!slot) throw new Error('No se ha encontrado esa tarea de limpieza.')
+
+    const taskKey = taskKeyOf(date, slot.slotId)
+    setSubmitting(true)
+    setError(null)
+    try {
+      await setDoc(taskRef(taskKey), {
+        date, slotId: slot.slotId, zoneId: slot.zoneId, zoneLabel: slot.zoneLabel,
+        assignedTo: userProfile.id, status: 'done', doneBy: userProfile.id,
+        doneAt: serverTimestamp(), source: 'historical', createdAt: serverTimestamp(),
+      }, { merge: true })
+      await recordActivity({
+        taskKey, date, zoneId: slot.zoneId, zoneLabel: slot.zoneLabel,
+        type: 'historical_done', assignedTo: userProfile.id,
+        actorId: userProfile.id, actorName: userProfile.name,
+      })
+    } catch (e) {
+      setError('Error al añadir la limpieza pasada: ' + e.message)
       throw e
     } finally {
       setSubmitting(false)
@@ -462,7 +495,7 @@ export function useCleaning() {
 
   return {
     tasksByKey,
-    markDone, claimSlot, claimRecurring, assignSlot, unassignSlot, undoMissed, disputeMark,
+    markDone, claimSlot, claimRecurring, addHistoricalCleaning, assignSlot, unassignSlot, undoMissed, disputeMark,
     submitJustification, voteJustification,
     runChecks,
     updateCleaningSettings,

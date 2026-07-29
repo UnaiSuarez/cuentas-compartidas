@@ -19,7 +19,7 @@
  *
  * Doc de /groups/{groupId}/cleaningTasks/{date_slotId}:
  *   date, slotId, zoneId, zoneLabel, assignedTo, status ('pending'|'done'|'missed'),
- *   source ('auto'|'signup'|'recurring'|'admin'), doneBy?, doneAt?, createdAt,
+ *   source ('auto'|'signup'|'recurring'|'admin'|'historical'), doneBy?, doneAt?, createdAt,
  *   justification?: { reason, submittedBy, approvals, deadline }
  */
 
@@ -146,13 +146,23 @@ export function buildCalendarDays(settings, members, tasksByKey, centerDate, day
   for (let offset = -daysBefore; offset <= daysAfter; offset++) {
     const d   = addDays(centerDate, offset)
     const key = dateStr(d)
-    const slots = slotsForDate(key, settings).map(slot => {
+    const regularSlots = slotsForDate(key, settings).map(slot => {
       const taskKey    = taskKeyOf(key, slot.slotId)
       const task       = tasksByKey[taskKey] || null
       const assignedTo = resolveAssignee(task, key, slot.slotId, members, settings)
       return { ...slot, taskKey, date: key, assignedTo, status: resolveStatus(task), task }
     })
-    days.push({ date: key, dateObj: d, slots })
+    const historicalSlots = Object.values(tasksByKey)
+      .filter(task => task.date === key && task.source === 'historical' && !regularSlots.some(slot => slot.slotId === task.slotId))
+      .map(task => {
+        const zone = settings.zones?.find(item => item.id === task.slotId)
+        return {
+          slotId: task.slotId, zoneId: task.zoneId, zoneLabel: task.zoneLabel,
+          zoneIcon: zone?.icon || '🧹', taskKey: taskKeyOf(key, task.slotId), date: key,
+          assignedTo: task.assignedTo, status: resolveStatus(task), task,
+        }
+      })
+    days.push({ date: key, dateObj: d, slots: [...regularSlots, ...historicalSlots] })
   }
   return days
 }
