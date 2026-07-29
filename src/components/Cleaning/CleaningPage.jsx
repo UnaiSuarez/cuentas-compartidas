@@ -19,7 +19,7 @@ const STATUS_LABEL = {
   pending: null,
   done:    { text: '✅ Hecho', cls: 'text-emerald-400' },
   missed:  { text: '❌ No se hizo', cls: 'text-red-400' },
-  justification_pending: { text: '🧾 En revisión', cls: 'text-amber-400' },
+  justification_pending: { text: '❌ No hecha · en revisión', cls: 'text-red-400' },
   excused: { text: '✓ Justificado', cls: 'text-blue-400' },
 }
 
@@ -29,6 +29,11 @@ function SlotCard({ slot, members, isAdmin, myUid, mode, onDone, onClaim, onClai
   const Av = member ? getAvatarByKey(member.avatar) : null
   const status = STATUS_LABEL[slot.status]
   const isMine = slot.assignedTo === myUid
+  const justification = slot.task?.justification
+  const requiredVoterIds = justification?.requiredVoterIds || members.filter(member => member.id !== justification?.submittedBy).map(member => member.id)
+  const approvedVoterIds = Object.keys(justification?.approvals || {})
+  const pendingReviewers = requiredVoterIds.filter(uid => !approvedVoterIds.includes(uid)).map(uid => members.find(member => member.id === uid)?.name || 'Alguien')
+  const canVoteJustification = slot.status === 'justification_pending' && requiredVoterIds.includes(myUid) && !approvedVoterIds.includes(myUid) && !justification?.rejections?.[myUid]
 
   return (
     <motion.div
@@ -45,6 +50,11 @@ function SlotCard({ slot, members, isAdmin, myUid, mode, onDone, onClaim, onClai
           </div>
         ) : (
           <p className="text-slate-500 text-xs mt-0.5">Sin asignar</p>
+        )}
+        {slot.status === 'justification_pending' && (
+          <p className="mt-1 text-xs text-amber-300/80 truncate">
+            Aprobado {approvedVoterIds.length}/{requiredVoterIds.length}{pendingReviewers.length ? ` · faltan ${pendingReviewers.join(', ')}` : ''}
+          </p>
         )}
       </div>
 
@@ -96,7 +106,7 @@ function SlotCard({ slot, members, isAdmin, myUid, mode, onDone, onClaim, onClai
           </button>
         )}
 
-        {slot.status === 'justification_pending' && !isMine && !slot.task?.justification?.approvals?.[myUid] && !slot.task?.justification?.rejections?.[myUid] && (
+        {canVoteJustification && (
           <div className="flex items-center gap-1">
             <button onClick={() => onVoteJustification(slot, true)} disabled={submitting} title="Aprobar justificante"
               className="rounded-lg p-1.5 text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-50"><ThumbsUp size={14}/></button>
