@@ -5,13 +5,14 @@ import {
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import {
   doc, getDoc, collection,
-  onSnapshot, query, orderBy,
+  onSnapshot, query, orderBy, limit,
   updateDoc, serverTimestamp,
 } from 'firebase/firestore'
 import { auth, db } from '../config/firebase'
 import { defaultCleaningSettings } from '../utils/calculateCleaningRotation'
 
 const AppContext = createContext(null)
+const DEFAULT_TX_LIMIT = 30
 
 export function useApp() {
   const ctx = useContext(AppContext)
@@ -35,15 +36,17 @@ export function AppProvider({ children }) {
   const [groupSettings, setGroupSettings] = useState(null)
   const [cleaningTasks,    setCleaningTasks]    = useState([])
   const [cleaningSettings, setCleaningSettings] = useState(defaultCleaningSettings())
+  const [fines,            setFines]            = useState([])
+  const [txLimit,          setTxLimit]          = useState(DEFAULT_TX_LIMIT)
 
   const [darkMode,  setDarkMode]  = useState(() => localStorage.getItem('theme') !== 'light')
   const [loading,   setLoading]   = useState(true)
   const [error,     setError]     = useState(null)
 
-  const unsubTxRef       = useRef(null)
   const unsubMsgRef      = useRef(null)
   const unsubGroupRef    = useRef(null)
   const unsubCleaningRef = useRef(null)
+  const unsubFinesRef    = useRef(null)
 
   const isAdmin = userProfile?.id != null && groupInfo?.createdBy === userProfile.id
 
@@ -106,10 +109,10 @@ export function AppProvider({ children }) {
   }, [])
 
   function cancelListeners() {
-    unsubTxRef.current?.()
     unsubMsgRef.current?.()
     unsubGroupRef.current?.()
     unsubCleaningRef.current?.()
+    unsubFinesRef.current?.()
   }
 
   function resetData() {
@@ -120,21 +123,25 @@ export function AppProvider({ children }) {
     setGroupInfo(null)
     setGroupMembers([])
     setTransactions([])
+    setTxLimit(DEFAULT_TX_LIMIT)
     setMessages([])
     setGroupSettings(null)
     setCleaningTasks([])
     setCleaningSettings(defaultCleaningSettings())
+    setFines([])
   }
 
   function resetGroupData() {
     setGroupInfo(null)
     setGroupMembers([])
     setTransactions([])
+    setTxLimit(DEFAULT_TX_LIMIT)
     setMessages([])
     setGroupSettings(null)
     setCategories(defaultCategories())
     setCleaningTasks([])
     setCleaningSettings(defaultCleaningSettings())
+    setFines([])
   }
 
   const subscribeToGroup = useCallback((gId) => {
@@ -156,11 +163,6 @@ export function AppProvider({ children }) {
       setGroupMembers(memberProfiles)
     })
 
-    unsubTxRef.current = onSnapshot(
-      query(collection(db, 'groups', gId, 'transactions'), orderBy('date', 'desc')),
-      (snap) => setTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-    )
-
     unsubMsgRef.current = onSnapshot(
       query(collection(db, 'groups', gId, 'messages'), orderBy('createdAt', 'desc')),
       (snap) => setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })))
@@ -171,7 +173,27 @@ export function AppProvider({ children }) {
       (snap) => setCleaningTasks(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     )
 
+    unsubFinesRef.current = onSnapshot(
+      query(collection(db, 'groups', gId, 'fines'), orderBy('createdAt', 'desc')),
+      (snap) => setFines(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    )
+
   }, [])
+
+  // Transacciones: listener independiente con límite incremental ("cargar más"),
+  // separado del resto para poder re-suscribir solo esto al cambiar txLimit.
+  useEffect(() => {
+    if (!groupId) return
+    const unsub = onSnapshot(
+      query(collection(db, 'groups', groupId, 'transactions'), orderBy('date', 'desc'), limit(txLimit)),
+      (snap) => setTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    )
+    return () => unsub()
+  }, [groupId, txLimit])
+
+  function loadMoreTransactions() {
+    setTxLimit(prev => prev + DEFAULT_TX_LIMIT)
+  }
 
   /** Cambia la sala activa */
   function switchActiveGroup(newGroupId) {
@@ -290,9 +312,10 @@ export function AppProvider({ children }) {
     firebaseUser, userProfile, groupId,
     userGroupIds, userRooms,
     groupInfo, groupMembers,
-    transactions, messages,
+    transactions, txLimit, loadMoreTransactions,
+    messages,
     categories, groupSettings,
-    cleaningTasks, cleaningSettings,
+    cleaningTasks, cleaningSettings, fines,
     isAdmin,
     loading, error, setError,
     logout, updateUserProfile,

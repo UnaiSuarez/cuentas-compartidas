@@ -60,7 +60,7 @@ function toInputDate(d) {
 }
 
 export default function TransactionList() {
-  const { transactions, groupMembers, categories, userProfile } = useApp()
+  const { transactions, txLimit, loadMoreTransactions, groupMembers, categories, userProfile } = useApp()
   const { deleteTransaction } = useTransactions()
 
   const [showForm,     setShowForm]     = useState(false)
@@ -434,6 +434,17 @@ export default function TransactionList() {
             )
           })}
         </div>
+      )}
+
+      {/* ── Cargar más (paginación incremental, no hay "páginas" con Firestore en tiempo real) */}
+      {transactions.length >= txLimit && (
+        <button
+          onClick={loadMoreTransactions}
+          className="w-full py-2.5 rounded-xl border border-dashed border-slate-700 text-slate-400
+                     hover:border-blue-500/40 hover:text-blue-400 text-sm transition-all"
+        >
+          Cargar más
+        </button>
       )}
     </div>
   )

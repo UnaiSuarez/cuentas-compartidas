@@ -9,8 +9,8 @@
 
 import { useState, useCallback } from 'react'
 import {
-  doc, setDoc, updateDoc, deleteDoc, deleteField,
-  collection, addDoc, serverTimestamp, Timestamp,
+  doc, setDoc, updateDoc, deleteField,
+  collection, addDoc, serverTimestamp,
   runTransaction,
 } from 'firebase/firestore'
 import { db } from '../config/firebase'
@@ -158,17 +158,17 @@ export function useCleaning() {
     const label = `${slot.zoneLabel} (${slot.date})`
 
     if (cleaningSettings.penalty?.fine) {
-      // Ingreso al fondo común, no un gasto de nadie: el dinero no queda a
-      // nombre de quien falló, simplemente pasa a ser del grupo (paidBy:'common').
-      const fineRef = await addDoc(collection(db, 'groups', groupId, 'transactions'), {
-        type: 'income', paymentMode: 'common', amount: Number(cleaningSettings.penalty.fineAmount) || 0,
-        category: 'cleaning_fine', categoryLabel: 'Multa de limpieza (fondo común)',
-        description: `Multa de ${missedMember?.name || 'alguien'} por no limpiar: ${label}`,
-        paidBy: 'common', splitAmong: [],
-        date: Timestamp.fromDate(new Date()),
-        createdAt: serverTimestamp(), updatedAt: serverTimestamp(), createdBy: 'system',
+      // Fondo de multas: ledger totalmente aparte del saldo colectivo/transacciones.
+      // Ese dinero no es de nadie — solo se resta de quien falla, nunca se reparte
+      // ni se suma al saldo de nadie más.
+      const fineRef = await addDoc(collection(db, 'groups', groupId, 'fines'), {
+        memberId: assignedUid, memberName: missedMember?.name || 'Alguien',
+        amount: Number(cleaningSettings.penalty.fineAmount) || 0,
+        zoneLabel: slot.zoneLabel, date: slot.date, taskKey: slot.taskKey,
+        status: 'active',
+        createdAt: serverTimestamp(),
       })
-      await updateDoc(taskRef(slot.taskKey), { fineTransactionId: fineRef.id })
+      await updateDoc(taskRef(slot.taskKey), { fineId: fineRef.id })
     }
 
     if (cleaningSettings.penalty?.enabled) {
@@ -180,6 +180,8 @@ export function useCleaning() {
   /**
    * Deshace un fallo marcado por error (ej. sí se limpió pero se olvidó
    * confirmarlo a tiempo): pasa el slot a 'done' y revierte la multa si la hubo.
+   * La multa NO se borra — se marca como revertida, para que quede constancia
+   * de ambas cosas en el registro y nadie pueda hacer trampas borrando el rastro.
    */
   async function undoMissed(slot) {
     if (!groupId || !userProfile || !slot.task) return
@@ -193,14 +195,19 @@ export function useCleaning() {
         correctedAt: serverTimestamp(),
       })
 
-      if (slot.task.fineTransactionId) {
-        await deleteDoc(doc(db, 'groups', groupId, 'transactions', slot.task.fineTransactionId))
+      if (slot.task.fineId) {
+        await updateDoc(doc(db, 'groups', groupId, 'fines', slot.task.fineId), {
+          status: 'reversed',
+          reversedAt: serverTimestamp(),
+          reversedBy: userProfile.id,
+          reversedByName: userProfile.name,
+        })
       }
 
       const member = groupMembers.find(m => m.id === slot.assignedTo)
       await sendSystemMessage(
         `🙏 ${userProfile.name} corrigió "${slot.zoneLabel}" del ${slot.date}: ${member?.name || 'la persona asignada'} sí había limpiado.` +
-        (slot.task.fineTransactionId ? ' Se revirtió la multa del fondo común.' : '')
+        (slot.task.fineId ? ' Se revirtió la multa del fondo de multas.' : '')
       )
     } catch (e) {
       setError('Error al deshacer el fallo: ' + e.message)

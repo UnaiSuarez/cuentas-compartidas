@@ -11,6 +11,7 @@ import Confetti from '../Common/Confetti'
 import CleaningCalendar from './CleaningCalendar'
 import CleaningStats from './CleaningStats'
 import CleaningSettingsPanel from './CleaningSettingsPanel'
+import CleaningFinesLog from './CleaningFinesLog'
 
 const STATUS_LABEL = {
   pending: null,
@@ -100,7 +101,7 @@ function SlotCard({ slot, members, isAdmin, myUid, mode, onDone, onClaim, onAssi
 }
 
 export default function CleaningPage() {
-  const { userProfile, groupMembers, isAdmin, cleaningTasks, cleaningSettings } = useApp()
+  const { userProfile, groupMembers, isAdmin, cleaningTasks, cleaningSettings, fines } = useApp()
   const {
     tasksByKey, markDone, claimSlot, assignSlot, unassignSlot, undoMissed,
     runChecks, updateCleaningSettings, submitting,
@@ -204,7 +205,9 @@ export default function CleaningPage() {
         )}
       </div>
 
-      <CleaningStats cleaningTasks={cleaningTasks} members={groupMembers}/>
+      <CleaningFinesLog fines={fines}/>
+
+      <CleaningStats cleaningTasks={cleaningTasks} members={groupMembers} fines={fines}/>
     </div>
   )
 }
