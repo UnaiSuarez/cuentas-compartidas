@@ -5,14 +5,13 @@ import {
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import {
   doc, getDoc, collection,
-  onSnapshot, query, orderBy, limit,
+  onSnapshot, query, orderBy,
   updateDoc, serverTimestamp,
 } from 'firebase/firestore'
 import { auth, db } from '../config/firebase'
 import { defaultCleaningSettings } from '../utils/calculateCleaningRotation'
 
 const AppContext = createContext(null)
-const DEFAULT_TX_LIMIT = 30
 
 export function useApp() {
   const ctx = useContext(AppContext)
@@ -37,12 +36,12 @@ export function AppProvider({ children }) {
   const [cleaningTasks,    setCleaningTasks]    = useState([])
   const [cleaningSettings, setCleaningSettings] = useState(defaultCleaningSettings())
   const [fines,            setFines]            = useState([])
-  const [txLimit,          setTxLimit]          = useState(DEFAULT_TX_LIMIT)
 
   const [darkMode,  setDarkMode]  = useState(() => localStorage.getItem('theme') !== 'light')
   const [loading,   setLoading]   = useState(true)
   const [error,     setError]     = useState(null)
 
+  const unsubTxRef       = useRef(null)
   const unsubMsgRef      = useRef(null)
   const unsubGroupRef    = useRef(null)
   const unsubCleaningRef = useRef(null)
@@ -109,6 +108,7 @@ export function AppProvider({ children }) {
   }, [])
 
   function cancelListeners() {
+    unsubTxRef.current?.()
     unsubMsgRef.current?.()
     unsubGroupRef.current?.()
     unsubCleaningRef.current?.()
@@ -123,7 +123,6 @@ export function AppProvider({ children }) {
     setGroupInfo(null)
     setGroupMembers([])
     setTransactions([])
-    setTxLimit(DEFAULT_TX_LIMIT)
     setMessages([])
     setGroupSettings(null)
     setCleaningTasks([])
@@ -135,7 +134,6 @@ export function AppProvider({ children }) {
     setGroupInfo(null)
     setGroupMembers([])
     setTransactions([])
-    setTxLimit(DEFAULT_TX_LIMIT)
     setMessages([])
     setGroupSettings(null)
     setCategories(defaultCategories())
@@ -163,6 +161,15 @@ export function AppProvider({ children }) {
       setGroupMembers(memberProfiles)
     })
 
+    // Todas las transacciones, sin límite: los cálculos de saldo (Dashboard,
+    // Liquidación, Estadísticas) necesitan el historial completo para ser
+    // correctos. La paginación de la lista en TransactionList es solo visual
+    // (recorta lo que se pinta, no lo que se carga ni lo que se calcula).
+    unsubTxRef.current = onSnapshot(
+      query(collection(db, 'groups', gId, 'transactions'), orderBy('date', 'desc')),
+      (snap) => setTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    )
+
     unsubMsgRef.current = onSnapshot(
       query(collection(db, 'groups', gId, 'messages'), orderBy('createdAt', 'desc')),
       (snap) => setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })))
@@ -179,21 +186,6 @@ export function AppProvider({ children }) {
     )
 
   }, [])
-
-  // Transacciones: listener independiente con límite incremental ("cargar más"),
-  // separado del resto para poder re-suscribir solo esto al cambiar txLimit.
-  useEffect(() => {
-    if (!groupId) return
-    const unsub = onSnapshot(
-      query(collection(db, 'groups', groupId, 'transactions'), orderBy('date', 'desc'), limit(txLimit)),
-      (snap) => setTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-    )
-    return () => unsub()
-  }, [groupId, txLimit])
-
-  function loadMoreTransactions() {
-    setTxLimit(prev => prev + DEFAULT_TX_LIMIT)
-  }
 
   /** Cambia la sala activa */
   function switchActiveGroup(newGroupId) {
@@ -312,7 +304,7 @@ export function AppProvider({ children }) {
     firebaseUser, userProfile, groupId,
     userGroupIds, userRooms,
     groupInfo, groupMembers,
-    transactions, txLimit, loadMoreTransactions,
+    transactions,
     messages,
     categories, groupSettings,
     cleaningTasks, cleaningSettings, fines,
