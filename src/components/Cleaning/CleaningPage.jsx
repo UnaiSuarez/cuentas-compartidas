@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { SlidersHorizontal, Check, UserPlus, UserMinus, X, CalendarOff, Undo2 } from 'lucide-react'
+import { SlidersHorizontal, Check, UserPlus, UserMinus, X, CalendarOff, Undo2, Flag } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import { useCleaning } from '../../hooks/useCleaning'
 import { buildCalendarDays, todayStr } from '../../utils/calculateCleaningRotation'
@@ -19,7 +19,7 @@ const STATUS_LABEL = {
   missed:  { text: '❌ No se hizo', cls: 'text-red-400' },
 }
 
-function SlotCard({ slot, members, isAdmin, myUid, mode, onDone, onClaim, onAssign, onUnassign, onUndo, submitting }) {
+function SlotCard({ slot, members, isAdmin, myUid, mode, onDone, onClaim, onAssign, onUnassign, onUndo, onDispute, submitting }) {
   const [assigning, setAssigning] = useState(false)
   const member = members.find(m => m.id === slot.assignedTo)
   const Av = member ? getAvatarByKey(member.avatar) : null
@@ -45,6 +45,13 @@ function SlotCard({ slot, members, isAdmin, myUid, mode, onDone, onClaim, onAssi
       </div>
 
       {status && <span className={`text-xs font-medium shrink-0 ${status.cls}`}>{status.text}</span>}
+
+      {slot.status === 'done' && isAdmin && (
+        <button onClick={() => onDispute(slot)} disabled={submitting} title="Poner en duda esta confirmación (por si mintió)"
+          className="p-1.5 text-slate-500 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-all shrink-0">
+          <Flag size={14}/>
+        </button>
+      )}
 
       {slot.status === 'missed' && (isMine || isAdmin) && (
         <button onClick={() => onUndo(slot)} disabled={submitting} title="Sí lo hice, deshacer el fallo"
@@ -103,7 +110,7 @@ function SlotCard({ slot, members, isAdmin, myUid, mode, onDone, onClaim, onAssi
 export default function CleaningPage() {
   const { userProfile, groupMembers, isAdmin, cleaningTasks, cleaningSettings, fines } = useApp()
   const {
-    tasksByKey, markDone, claimSlot, assignSlot, unassignSlot, undoMissed,
+    tasksByKey, markDone, claimSlot, assignSlot, unassignSlot, undoMissed, disputeMark,
     runChecks, updateCleaningSettings, submitting,
   } = useCleaning()
 
@@ -128,6 +135,11 @@ export default function CleaningPage() {
   async function handleDone(slot) {
     await markDone(slot)
     if (isToday) setConfetti(c => !c)
+  }
+
+  async function handleDispute(slot) {
+    if (!confirm('¿Poner en duda esta confirmación? Vuelve a quedar pendiente y, si el día ya pasó, puede contar como fallo.')) return
+    await disputeMark(slot)
   }
 
   return (
@@ -180,6 +192,7 @@ export default function CleaningPage() {
                 onAssign={assignSlot}
                 onUnassign={unassignSlot}
                 onUndo={undoMissed}
+                onDispute={handleDispute}
                 submitting={submitting}
               />
             ))}

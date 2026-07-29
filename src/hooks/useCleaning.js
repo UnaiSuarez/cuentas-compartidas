@@ -218,6 +218,38 @@ export function useCleaning() {
   }
 
   /**
+   * Pone en duda una tarea marcada como hecha (ej. alguien sospecha que
+   * mintió). Solo el admin puede hacerlo. Vuelve a 'pending' — si el día ya
+   * pasó, el siguiente runChecks() la marcará 'missed' con su penalización
+   * normal. Deja rastro (disputedBy/disputedAt) y aviso en el chat.
+   */
+  async function disputeMark(slot) {
+    if (!groupId || !userProfile || !slot.task) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      await updateDoc(taskRef(slot.taskKey), {
+        status: 'pending',
+        doneBy: deleteField(),
+        doneAt: deleteField(),
+        disputedBy: userProfile.id,
+        disputedByName: userProfile.name,
+        disputedAt: serverTimestamp(),
+      })
+
+      const member = groupMembers.find(m => m.id === slot.assignedTo)
+      await sendSystemMessage(
+        `🚩 ${userProfile.name} ha puesto en duda que ${member?.name || 'alguien'} limpiara "${slot.zoneLabel}" del ${slot.date}. Vuelve a quedar pendiente.`
+      )
+    } catch (e) {
+      setError('Error al poner en duda: ' + e.message)
+      throw e
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  /**
    * Revisa el calendario reciente y:
    *  - marca como falladas las tareas pasadas que quedaron pendientes y aplica penalización
    *  - recuerda al usuario si hoy le toca algo
@@ -251,7 +283,7 @@ export function useCleaning() {
 
   return {
     tasksByKey,
-    markDone, claimSlot, assignSlot, unassignSlot, undoMissed,
+    markDone, claimSlot, assignSlot, unassignSlot, undoMissed, disputeMark,
     runChecks,
     updateCleaningSettings,
     submitting, error, setError,
