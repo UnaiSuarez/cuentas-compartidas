@@ -8,11 +8,14 @@ import Dashboard        from './components/Dashboard/Dashboard'
 import Transactions     from './components/Transactions/TransactionList'
 import TutorialOverlay  from './components/Tutorial/TutorialOverlay'
 import SplashScreen     from './components/Common/SplashScreen'
+import NotificationGate    from './components/Common/NotificationGate'
+import NotificationWatcher from './components/Common/NotificationWatcher'
 
 const Settlement = lazy(() => import('./components/Settlement/SettlementPage'))
 const Statistics = lazy(() => import('./components/Statistics/StatisticsPage'))
 const ChatWindow = lazy(() => import('./components/Chat/ChatWindow'))
 const Settings   = lazy(() => import('./components/Settings/SettingsPage'))
+const Cleaning   = lazy(() => import('./components/Cleaning/CleaningPage'))
 
 function PageLoader() {
   return (
@@ -61,28 +64,32 @@ export default function App() {
     return <RoomSelector />
   }
 
-  // Todo listo → app principal
+  // Todo listo → app principal (bloqueado hasta activar notificaciones)
   return (
-    <BrowserRouter>
-      {showTutorial && <TutorialOverlay onDone={handleTutorialDone}/>}
-      <div className="min-h-screen bg-slate-950 text-slate-100">
-        <Navbar />
-        <main className="md:ml-20 lg:ml-56 pb-20 md:pb-0">
-          <div className="max-w-4xl mx-auto p-4 md:p-6">
-            <Suspense fallback={<PageLoader />}>
-              <Routes>
-                <Route path="/"              element={<Dashboard />} />
-                <Route path="/transacciones" element={<Transactions />} />
-                <Route path="/liquidacion"   element={<Settlement />} />
-                <Route path="/estadisticas"  element={<Statistics />} />
-                <Route path="/chat"          element={<ChatWindow />} />
-                <Route path="/ajustes"       element={<Settings />} />
-                <Route path="*"             element={<Navigate to="/" replace />} />
-              </Routes>
-            </Suspense>
-          </div>
-        </main>
-      </div>
-    </BrowserRouter>
+    <NotificationGate>
+      <BrowserRouter>
+        <NotificationWatcher/>
+        {showTutorial && <TutorialOverlay onDone={handleTutorialDone}/>}
+        <div className="min-h-screen bg-slate-950 text-slate-100">
+          <Navbar />
+          <main className="md:ml-20 lg:ml-56 pb-20 md:pb-0">
+            <div className="max-w-4xl mx-auto p-4 md:p-6">
+              <Suspense fallback={<PageLoader />}>
+                <Routes>
+                  <Route path="/"              element={<Dashboard />} />
+                  <Route path="/transacciones" element={<Transactions />} />
+                  <Route path="/liquidacion"   element={<Settlement />} />
+                  <Route path="/estadisticas"  element={<Statistics />} />
+                  <Route path="/limpieza"      element={<Cleaning />} />
+                  <Route path="/chat"          element={<ChatWindow />} />
+                  <Route path="/ajustes"       element={<Settings />} />
+                  <Route path="*"             element={<Navigate to="/" replace />} />
+                </Routes>
+              </Suspense>
+            </div>
+          </main>
+        </div>
+      </BrowserRouter>
+    </NotificationGate>
   )
 }

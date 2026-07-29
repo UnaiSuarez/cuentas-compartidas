@@ -3,7 +3,7 @@ import { NavLink, useLocation }  from 'react-router-dom'
 import { motion }                from 'framer-motion'
 import {
   LayoutDashboard, ArrowLeftRight, Scale,
-  BarChart2, MessageCircle, Settings, LogOut, Sun, Moon,
+  BarChart2, MessageCircle, Settings, LogOut, Sun, Moon, SprayCan,
 } from 'lucide-react'
 import { animate }               from 'animejs'
 import { useApp }                from '../../context/AppContext'
@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { to: '/transacciones', icon: ArrowLeftRight,  label: 'Transacciones' },
   { to: '/liquidacion',   icon: Scale,           label: 'Liquidación'   },
   { to: '/estadisticas',  icon: BarChart2,        label: 'Estadísticas'  },
+  { to: '/limpieza',      icon: SprayCan,        label: 'Limpieza'      },
   { to: '/chat',          icon: MessageCircle,   label: 'Chat'          },
   { to: '/ajustes',       icon: Settings,        label: 'Ajustes'       },
 ]
