@@ -9,6 +9,7 @@ import {
   updateDoc, serverTimestamp,
 } from 'firebase/firestore'
 import { auth, db } from '../config/firebase'
+import { defaultCleaningSettings } from '../utils/calculateCleaningRotation'
 
 const AppContext = createContext(null)
 
@@ -32,14 +33,17 @@ export function AppProvider({ children }) {
   // payments eliminado: ya no se necesita flujo de confirmación manual
   const [categories,    setCategories]    = useState(defaultCategories())
   const [groupSettings, setGroupSettings] = useState(null)
+  const [cleaningTasks,    setCleaningTasks]    = useState([])
+  const [cleaningSettings, setCleaningSettings] = useState(defaultCleaningSettings())
 
   const [darkMode,  setDarkMode]  = useState(() => localStorage.getItem('theme') !== 'light')
   const [loading,   setLoading]   = useState(true)
   const [error,     setError]     = useState(null)
 
-  const unsubTxRef      = useRef(null)
-  const unsubMsgRef     = useRef(null)
-  const unsubGroupRef   = useRef(null)
+  const unsubTxRef       = useRef(null)
+  const unsubMsgRef      = useRef(null)
+  const unsubGroupRef    = useRef(null)
+  const unsubCleaningRef = useRef(null)
 
   const isAdmin = userProfile?.id != null && groupInfo?.createdBy === userProfile.id
 
@@ -105,6 +109,7 @@ export function AppProvider({ children }) {
     unsubTxRef.current?.()
     unsubMsgRef.current?.()
     unsubGroupRef.current?.()
+    unsubCleaningRef.current?.()
   }
 
   function resetData() {
@@ -117,6 +122,8 @@ export function AppProvider({ children }) {
     setTransactions([])
     setMessages([])
     setGroupSettings(null)
+    setCleaningTasks([])
+    setCleaningSettings(defaultCleaningSettings())
   }
 
   function resetGroupData() {
@@ -126,6 +133,8 @@ export function AppProvider({ children }) {
     setMessages([])
     setGroupSettings(null)
     setCategories(defaultCategories())
+    setCleaningTasks([])
+    setCleaningSettings(defaultCleaningSettings())
   }
 
   const subscribeToGroup = useCallback((gId) => {
@@ -136,6 +145,7 @@ export function AppProvider({ children }) {
       const data = snap.data()
       setGroupSettings(data.settings || null)
       if (data.categories) setCategories(data.categories)
+      setCleaningSettings({ ...defaultCleaningSettings(), ...(data.cleaningSettings || {}) })
       setGroupInfo({
         name:      data.name,
         code:      data.code,
@@ -154,6 +164,11 @@ export function AppProvider({ children }) {
     unsubMsgRef.current = onSnapshot(
       query(collection(db, 'groups', gId, 'messages'), orderBy('createdAt', 'desc')),
       (snap) => setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    )
+
+    unsubCleaningRef.current = onSnapshot(
+      query(collection(db, 'groups', gId, 'cleaningTasks'), orderBy('date', 'desc')),
+      (snap) => setCleaningTasks(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     )
 
   }, [])
@@ -222,6 +237,16 @@ export function AppProvider({ children }) {
     })
   }
 
+  /** Actualiza la configuración de limpieza del grupo (modo, granularidad, zonas, rotación, penalización) */
+  async function updateCleaningSettings(newSettings) {
+    if (!groupId) return
+    const merged = { ...cleaningSettings, ...newSettings }
+    await updateDoc(doc(db, 'groups', groupId), {
+      cleaningSettings: merged,
+      updatedAt: serverTimestamp(),
+    })
+  }
+
   /** Actualiza el nombre del grupo (solo admin) */
   async function updateGroupName(newName) {
     if (!groupId || !isAdmin) return
@@ -267,10 +292,11 @@ export function AppProvider({ children }) {
     groupInfo, groupMembers,
     transactions, messages,
     categories, groupSettings,
+    cleaningTasks, cleaningSettings,
     isAdmin,
     loading, error, setError,
     logout, updateUserProfile,
-    updateGroupCategories, updateGroupName,
+    updateGroupCategories, updateGroupName, updateCleaningSettings,
     switchActiveGroup, clearActiveGroup,
     onProfileCreated,
     darkMode, toggleDarkMode,
