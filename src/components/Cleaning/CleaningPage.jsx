@@ -5,7 +5,7 @@ import { es } from 'date-fns/locale'
 import { SlidersHorizontal, Check, UserPlus, UserMinus, X, CalendarOff, Undo2, Flag, CalendarRange, FileText, ThumbsUp, ThumbsDown } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import { useCleaning } from '../../hooks/useCleaning'
-import { buildCalendarDays, todayStr } from '../../utils/calculateCleaningRotation'
+import { buildCalendarDays, taskKeyOf, todayStr } from '../../utils/calculateCleaningRotation'
 import { getAvatarByKey } from '../../assets/avatars'
 import Confetti from '../Common/Confetti'
 import CleaningCalendar from './CleaningCalendar'
@@ -159,6 +159,23 @@ export default function CleaningPage() {
   const [justificationSlot, setJustificationSlot] = useState(null)
   const [historicalDate, setHistoricalDate] = useState(null)
 
+  // Las multas antiguas creadas sin su tarea todavía deben poder corregirse desde el calendario.
+  const calendarTasksByKey = useMemo(() => {
+    const next = { ...tasksByKey }
+    fines.filter(fine => fine.status !== 'reversed').forEach(fine => {
+      const taskKey = fine.taskKey || taskKeyOf(fine.date, 'day')
+      if (next[taskKey]) return
+      const prefix = `${fine.date}_`
+      next[taskKey] = {
+        id: null, virtualFine: true, taskKey, date: fine.date,
+        slotId: taskKey.startsWith(prefix) ? taskKey.slice(prefix.length) : 'day',
+        zoneId: null, zoneLabel: fine.zoneLabel || 'Limpieza general',
+        assignedTo: fine.memberId, status: 'missed', source: 'fine', fineId: fine.id,
+      }
+    })
+    return next
+  }, [tasksByKey, fines])
+
   const checkedRef = useRef(false)
   useEffect(() => {
     if (checkedRef.current || !groupMembers.length) return
@@ -168,8 +185,8 @@ export default function CleaningPage() {
 
   const selectedDay = useMemo(() => {
     const centerDate = new Date(`${selectedDate}T00:00:00`)
-    return buildCalendarDays(cleaningSettings, groupMembers, tasksByKey, centerDate, 0, 0)[0]
-  }, [selectedDate, cleaningSettings, groupMembers, tasksByKey])
+    return buildCalendarDays(cleaningSettings, groupMembers, calendarTasksByKey, centerDate, 0, 0)[0]
+  }, [selectedDate, cleaningSettings, groupMembers, calendarTasksByKey])
 
   const isToday = selectedDate === todayStr()
   const isPast = selectedDate < todayStr()
@@ -213,7 +230,7 @@ export default function CleaningPage() {
       <CleaningCalendar
         settings={cleaningSettings}
         members={groupMembers}
-        tasksByKey={tasksByKey}
+        tasksByKey={calendarTasksByKey}
         selectedDate={selectedDate}
         onSelectDate={setSelectedDate}
       />

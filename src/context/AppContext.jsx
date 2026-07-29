@@ -6,10 +6,10 @@ import { onAuthStateChanged, signOut } from 'firebase/auth'
 import {
   doc, getDoc, collection,
   onSnapshot, query, orderBy,
-  updateDoc, serverTimestamp,
+  updateDoc, serverTimestamp, writeBatch,
 } from 'firebase/firestore'
 import { auth, db } from '../config/firebase'
-import { defaultCleaningSettings } from '../utils/calculateCleaningRotation'
+import { defaultCleaningSettings, isActiveDay, todayStr } from '../utils/calculateCleaningRotation'
 
 const AppContext = createContext(null)
 
@@ -265,10 +265,18 @@ export function AppProvider({ children }) {
   async function updateCleaningSettings(newSettings) {
     if (!groupId) return
     const merged = { ...cleaningSettings, ...newSettings }
-    await updateDoc(doc(db, 'groups', groupId), {
+    const today = todayStr()
+    const obsoleteTasks = cleaningTasks.filter(task =>
+      task.source !== 'historical' && task.date >= today &&
+      !isActiveDay(new Date(`${task.date}T00:00:00`), merged.activeDays)
+    )
+    const batch = writeBatch(db)
+    obsoleteTasks.forEach(task => batch.delete(doc(db, 'groups', groupId, 'cleaningTasks', task.id)))
+    batch.update(doc(db, 'groups', groupId), {
       cleaningSettings: merged,
       updatedAt: serverTimestamp(),
     })
+    await batch.commit()
   }
 
   /** Actualiza el nombre del grupo (solo admin) */

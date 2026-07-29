@@ -66,7 +66,8 @@ export function useCleaning() {
     setSubmitting(true)
     setError(null)
     try {
-      const existing = tasksByKey[slot.taskKey]
+      const storedTask = tasksByKey[slot.taskKey]
+      const existing = storedTask || slot.task
       await setDoc(taskRef(slot.taskKey), {
         date: slot.date, slotId: slot.slotId, zoneId: slot.zoneId, zoneLabel: slot.zoneLabel,
         assignedTo: slot.assignedTo,
@@ -74,7 +75,7 @@ export function useCleaning() {
         doneBy: userProfile.id,
         doneAt: serverTimestamp(),
         source: existing?.source || 'auto',
-        ...(existing ? {} : { createdAt: serverTimestamp() }),
+        ...(storedTask ? {} : { createdAt: serverTimestamp() }),
       }, { merge: true })
       await recordActivity({
         ...activityBase(slot), type: 'done', actorId: userProfile.id,
@@ -205,7 +206,8 @@ export function useCleaning() {
     setSubmitting(true)
     setError(null)
     try {
-      const existing = tasksByKey[slot.taskKey]
+      const storedTask = tasksByKey[slot.taskKey]
+      const existing = storedTask || slot.task
       const previousUid = existing?.assignedTo || slot.assignedTo
       await setDoc(taskRef(slot.taskKey), {
         date: slot.date, slotId: slot.slotId, zoneId: slot.zoneId, zoneLabel: slot.zoneLabel,
@@ -213,7 +215,7 @@ export function useCleaning() {
         status: existing?.status || 'pending',
         source: existing?.source || 'admin',
         assignmentCleared: deleteField(),
-        ...(existing ? {} : { createdAt: serverTimestamp() }),
+        ...(storedTask ? {} : { createdAt: serverTimestamp() }),
       }, { merge: true })
       if (existing?.status === 'missed' && existing.fineId) {
         const target = groupMembers.find(m => m.id === targetUid)
@@ -251,7 +253,7 @@ export function useCleaning() {
         assignedTo: deleteField(), assignmentCleared: true, status: 'pending',
         doneBy: deleteField(), doneAt: deleteField(), missedAt: deleteField(),
       }
-      if (slot.task) {
+      if (tasksByKey[slot.taskKey]) {
         await updateDoc(taskRef(slot.taskKey), reset)
       } else {
         await setDoc(taskRef(slot.taskKey), {
