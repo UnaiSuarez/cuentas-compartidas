@@ -20,6 +20,7 @@ import { useChat } from './useChat'
 import {
   autoAssignee, buildCalendarDays, taskKeyOf, todayStr, dateStr, slotsForDate,
 } from '../utils/calculateCleaningRotation'
+import { activeFinesForTask } from '../utils/cleaningFines'
 import {
   notifyCleaningAssigned, notifyCleaningDueToday,
   notifyCleaningMissed, notifyCleaningUnassigned, notifyCleaningJustification,
@@ -31,7 +32,7 @@ const CHECK_WINDOW_NEXT = 1  // días hacia delante a avisar de huecos sin apunt
 export function useCleaning() {
   const {
     groupId, userProfile, groupMembers,
-    cleaningTasks, cleaningSettings, updateCleaningSettings,
+    cleaningTasks, cleaningSettings, fines, updateCleaningSettings,
   } = useApp()
   const { sendSystemMessage } = useChat()
   const [submitting, setSubmitting] = useState(false)
@@ -58,6 +59,18 @@ export function useCleaning() {
       zoneLabel: slot.zoneLabel,
       zoneId: slot.zoneId,
     }
+  }
+
+  /** Revierte todas las multas activas de una tarea, incluidas duplicadas antiguas. */
+  async function reverseTaskFines(taskKey, exceptFineId = null) {
+    const linkedFines = activeFinesForTask(fines, taskKey)
+      .filter(fine => fine.id !== exceptFineId)
+    await Promise.all(linkedFines.map(fine => updateDoc(doc(db, 'groups', groupId, 'fines', fine.id), {
+      status: 'reversed',
+      reversedAt: serverTimestamp(),
+      reversedBy: userProfile?.id || null,
+      reversedByName: userProfile?.name || 'Alguien',
+    })))
   }
 
   /** Marca un slot como limpiado. */
@@ -217,14 +230,24 @@ export function useCleaning() {
         assignmentCleared: deleteField(),
         ...(storedTask ? {} : { createdAt: serverTimestamp() }),
       }, { merge: true })
-      if (existing?.status === 'missed' && existing.fineId) {
+      if (existing?.status === 'missed') {
         const target = groupMembers.find(m => m.id === targetUid)
-        await updateDoc(doc(db, 'groups', groupId, 'fines', existing.fineId), {
-          memberId: targetUid,
-          memberName: target?.name || 'Alguien',
-          reassignedAt: serverTimestamp(),
-          reassignedBy: userProfile?.id || null,
-        })
+        const [fine, ...duplicates] = activeFinesForTask(fines, slot.taskKey)
+        if (fine) {
+          await updateDoc(doc(db, 'groups', groupId, 'fines', fine.id), {
+            memberId: targetUid,
+            memberName: target?.name || 'Alguien',
+            reassignedAt: serverTimestamp(),
+            reassignedBy: userProfile?.id || null,
+          })
+          await updateDoc(taskRef(slot.taskKey), { fineId: fine.id })
+          await Promise.all(duplicates.map(duplicate => updateDoc(doc(db, 'groups', groupId, 'fines', duplicate.id), {
+            status: 'reversed',
+            reversedAt: serverTimestamp(),
+            reversedBy: userProfile?.id || null,
+            reversedByName: userProfile?.name || 'Alguien',
+          })))
+        }
       }
       await recordActivity({
         ...activityBase(slot), type: previousUid === targetUid ? 'assigned' : 'reassigned',
@@ -261,14 +284,7 @@ export function useCleaning() {
           source: 'admin', createdAt: serverTimestamp(), status: 'pending', assignmentCleared: true,
         })
       }
-      if (slot.task?.fineId) {
-        await updateDoc(doc(db, 'groups', groupId, 'fines', slot.task.fineId), {
-          status: 'reversed',
-          reversedAt: serverTimestamp(),
-          reversedBy: userProfile?.id || null,
-          reversedByName: userProfile?.name || 'Alguien',
-        })
-      }
+      await reverseTaskFines(slot.taskKey)
       await recordActivity({
         ...activityBase(slot), type: 'unassigned', actorId: userProfile?.id || null,
         actorName: userProfile?.name || 'Alguien', previousAssignedTo: slot.assignedTo,
@@ -286,13 +302,31 @@ export function useCleaning() {
     const label = `${slot.zoneLabel} (${slot.date})`
 
     if (cleaningSettings.penalty?.fine) {
-      const fineRef = await addDoc(collection(db, 'groups', groupId, 'fines'), {
-        memberId: assignedUid, memberName: missedMember?.name || 'Alguien',
-        amount: Number(cleaningSettings.penalty.fineAmount) || 0,
-        zoneLabel: slot.zoneLabel, date: slot.date, taskKey: slot.taskKey,
-        status: 'active', createdAt: serverTimestamp(),
-      })
+      const [existingFine, ...duplicates] = activeFinesForTask(fines, slot.taskKey)
+      const fineRef = existingFine
+        ? doc(db, 'groups', groupId, 'fines', existingFine.id)
+        : doc(db, 'groups', groupId, 'fines', slot.taskKey)
+
+      if (existingFine) {
+        await updateDoc(fineRef, {
+          memberId: assignedUid,
+          memberName: missedMember?.name || 'Alguien',
+        })
+      } else {
+        await setDoc(fineRef, {
+          memberId: assignedUid, memberName: missedMember?.name || 'Alguien',
+          amount: Number(cleaningSettings.penalty.fineAmount) || 0,
+          zoneLabel: slot.zoneLabel, date: slot.date, taskKey: slot.taskKey,
+          status: 'active', createdAt: serverTimestamp(),
+        })
+      }
       await updateDoc(taskRef(slot.taskKey), { fineId: fineRef.id })
+      await Promise.all(duplicates.map(duplicate => updateDoc(doc(db, 'groups', groupId, 'fines', duplicate.id), {
+        status: 'reversed',
+        reversedAt: serverTimestamp(),
+        reversedBy: userProfile?.id || null,
+        reversedByName: userProfile?.name || 'Sistema',
+      })))
     }
 
     await recordActivity({
@@ -343,12 +377,14 @@ export function useCleaning() {
       await setDoc(taskRef(slot.taskKey), {
         date: slot.date, slotId: slot.slotId, zoneId: slot.zoneId, zoneLabel: slot.zoneLabel,
         assignedTo: slot.assignedTo, status: 'justification_pending', source: slot.task?.source || 'auto',
+        fineId: deleteField(),
         justification: {
           reason: reason.trim(), submittedBy: userProfile.id, submittedByName: userProfile.name,
           requiredVoterIds, approvals: {}, deadline: dateStr(addDays(new Date(`${slot.date}T00:00:00`), 2)),
         },
         ...(slot.task ? {} : { createdAt: serverTimestamp() }),
       }, { merge: true })
+      await reverseTaskFines(slot.taskKey)
       await recordActivity({
         ...activityBase(slot), type: 'justification_submitted', assignedTo: slot.assignedTo,
         actorId: userProfile.id, actorName: userProfile.name, reason: reason.trim(),
@@ -430,19 +466,12 @@ export function useCleaning() {
         actorId: userProfile.id, actorName: userProfile.name,
       })
 
-      if (slot.task.fineId) {
-        await updateDoc(doc(db, 'groups', groupId, 'fines', slot.task.fineId), {
-          status: 'reversed',
-          reversedAt: serverTimestamp(),
-          reversedBy: userProfile.id,
-          reversedByName: userProfile.name,
-        })
-      }
+      await reverseTaskFines(slot.taskKey)
 
       const member = groupMembers.find(m => m.id === slot.assignedTo)
       await sendSystemMessage(
         `🙏 ${userProfile.name} corrigió "${slot.zoneLabel}" del ${slot.date}: ${member?.name || 'la persona asignada'} sí había limpiado.` +
-        (slot.task.fineId ? ' Se revirtió la multa del fondo de multas.' : '')
+        (activeFinesForTask(fines, slot.taskKey).length ? ' Se revirtió la multa del fondo de multas.' : '')
       )
     } catch (e) {
       setError('Error al deshacer el fallo: ' + e.message)

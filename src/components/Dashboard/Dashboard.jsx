@@ -1,6 +1,6 @@
 import { useMemo, useEffect, useRef } from 'react'
 import { motion }         from 'framer-motion'
-import { TrendingUp, TrendingDown, Wallet, Users } from 'lucide-react'
+import { TrendingUp, TrendingDown, Wallet, Users, Landmark } from 'lucide-react'
 import { useApp }         from '../../context/AppContext'
 import { useSettlement }  from '../../hooks/useSettlement'
 import { formatCurrency, amountColor } from '../../utils/formatters'
@@ -90,6 +90,13 @@ export default function Dashboard() {
       isCurrency: true,
     },
     {
+      label:      'Fondo de multas',
+      value:      summary.fondoMultas,
+      icon:       Landmark,
+      color:      'amber',
+      isCurrency: true,
+    },
+    {
       label:      'Miembros',
       value:      groupMembers.length,
       icon:       Users,
@@ -149,7 +156,7 @@ export default function Dashboard() {
       )}
 
       {/* Tarjetas de resumen con tilt 3D y scroll reveal */}
-      <div ref={summaryGridRef} className="grid grid-cols-2 lg:grid-cols-4 gap-3" style={{ opacity: 0 }}>
+      <div ref={summaryGridRef} className="grid grid-cols-2 lg:grid-cols-5 gap-3" style={{ opacity: 0 }}>
         {cards.map((card, i) => {
           const Icon = card.icon
           return (

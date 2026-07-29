@@ -11,7 +11,7 @@
  *   - Σ balance[uid] = saldoColectivo = totalIngresos − totalGastos (siempre).
  */
 
-export function calculateBalances(transactions, users) {
+export function calculateBalances(transactions, users, fines = []) {
   const balances = {}
   users.forEach(u => { balances[u.id] = 0 })
 
@@ -45,6 +45,12 @@ export function calculateBalances(transactions, users) {
     participantes.forEach(uid => {
       if (balances[uid] !== undefined) balances[uid] -= partePorPersona
     })
+  })
+
+  // Una multa reduce el saldo de quien falló, pero no se reparte entre personas:
+  // queda contabilizada en el fondo de multas del grupo.
+  fines.forEach(fine => {
+    if (balances[fine.memberId] !== undefined) balances[fine.memberId] -= Number(fine.amount) || 0
   })
 
   return balances
@@ -82,7 +88,7 @@ export function calculateOptimalPayments(balances) {
   return payments
 }
 
-export function calculateGroupSummary(transactions, users) {
+export function calculateGroupSummary(transactions, users, fines = []) {
   let totalIngresos = 0
   let totalGastos   = 0
 
@@ -94,7 +100,8 @@ export function calculateGroupSummary(transactions, users) {
     // gastos externos no afectan el pool colectivo
   })
 
-  const balances     = calculateBalances(transactions, users)
+  const fondoMultas  = fines.reduce((sum, fine) => sum + (Number(fine.amount) || 0), 0)
+  const balances     = calculateBalances(transactions, users, fines)
   const pagosOptimos = calculateOptimalPayments(balances)
 
   // saldoColectivo = dinero real en el fondo = ingresos − todos los gastos
@@ -104,6 +111,7 @@ export function calculateGroupSummary(transactions, users) {
     totalIngresos,
     totalGastos,
     saldoColectivo,
+    fondoMultas,
     balances,
     pagosOptimos,
   }
@@ -116,10 +124,14 @@ export function calculateGroupSummary(transactions, users) {
  * Incluye paidAsProxy: el importe que cada persona pagó físicamente
  * por cuenta del fondo (informativo, no afecta al balance).
  */
-export function calculateBalanceBreakdown(transactions, users) {
+export function calculateBalanceBreakdown(transactions, users, fines = []) {
   const data = {}
   users.forEach(u => {
-    data[u.id] = { contributed: 0, expenseShare: 0, paidAsProxy: 0 }
+    data[u.id] = { contributed: 0, expenseShare: 0, paidAsProxy: 0, fines: 0 }
+  })
+
+  fines.forEach(fine => {
+    if (data[fine.memberId]) data[fine.memberId].fines += Number(fine.amount) || 0
   })
 
   let poolBalance = 0
@@ -157,7 +169,7 @@ export function calculateBalanceBreakdown(transactions, users) {
   Object.entries(data).forEach(([uid, b]) => {
     userBreakdowns[uid] = {
       ...b,
-      balance: b.contributed - b.expenseShare,
+      balance: b.contributed - b.expenseShare - b.fines,
     }
   })
 

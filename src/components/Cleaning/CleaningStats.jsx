@@ -1,13 +1,14 @@
 import { Flame, CheckCircle2, XCircle, Landmark } from 'lucide-react'
 import { getAvatarByKey } from '../../assets/avatars'
 import { computeCleaningStats } from '../../utils/calculateCleaningRotation'
+import { activeUniqueFines } from '../../utils/cleaningFines'
 import { formatCurrency } from '../../utils/formatters'
 
 export default function CleaningStats({ cleaningTasks, members, fines = [] }) {
   const stats = computeCleaningStats(cleaningTasks, members)
 
   const finesByMember = {}
-  fines.filter(f => f.status !== 'reversed').forEach(f => {
+  activeUniqueFines(fines).forEach(f => {
     finesByMember[f.memberId] = (finesByMember[f.memberId] || 0) + (f.amount || 0)
   })
 

@@ -270,8 +270,21 @@ export function AppProvider({ children }) {
       task.source !== 'historical' && task.date >= today &&
       !isActiveDay(new Date(`${task.date}T00:00:00`), merged.activeDays)
     )
+    const obsoleteTaskKeys = new Set(obsoleteTasks.map(task => `${task.date}_${task.slotId}`))
+    const obsoleteFines = fines.filter(fine =>
+      fine.status !== 'reversed' && (
+        obsoleteTaskKeys.has(fine.taskKey) ||
+        (fine.date >= today && !isActiveDay(new Date(`${fine.date}T00:00:00`), merged.activeDays))
+      )
+    )
     const batch = writeBatch(db)
     obsoleteTasks.forEach(task => batch.delete(doc(db, 'groups', groupId, 'cleaningTasks', task.id)))
+    obsoleteFines.forEach(fine => batch.update(doc(db, 'groups', groupId, 'fines', fine.id), {
+      status: 'reversed',
+      reversedAt: serverTimestamp(),
+      reversedBy: userProfile?.id || null,
+      reversedByName: userProfile?.name || 'Alguien',
+    }))
     batch.update(doc(db, 'groups', groupId), {
       cleaningSettings: merged,
       updatedAt: serverTimestamp(),
