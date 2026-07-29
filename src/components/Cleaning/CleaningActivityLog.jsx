@@ -12,6 +12,7 @@ const EVENT = {
   unassigned: { label: 'quitó la asignación', Icon: UserMinus, color: 'text-slate-400' },
   done: { label: 'marcó la tarea como hecha', Icon: Check, color: 'text-emerald-400' },
   historical_done: { label: 'registró una limpieza pasada', Icon: Check, color: 'text-emerald-400' },
+  historical_missed: { label: 'registró una limpieza pasada como no hecha', Icon: X, color: 'text-red-400' },
   missed: { label: 'marcó la tarea como no hecha', Icon: X, color: 'text-red-400' },
   missed_corrected: { label: 'corrigió un fallo', Icon: Undo2, color: 'text-slate-400' },
   disputed: { label: 'puso en duda la confirmación', Icon: Flag, color: 'text-amber-400' },

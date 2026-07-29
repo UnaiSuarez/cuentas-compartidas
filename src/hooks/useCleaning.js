@@ -89,8 +89,8 @@ export function useCleaning() {
   }
 
   /** Registra una limpieza pasada aunque ese día no estuviese en el calendario configurado. */
-  async function addHistoricalCleaning(date, slotId) {
-    if (!groupId || !userProfile) return
+  async function addHistoricalCleaning(date, slotId, assignedTo, status) {
+    if (!groupId || !userProfile || !assignedTo || !['done', 'missed'].includes(status)) return
     const configuredZone = cleaningSettings.zones?.find(zone => zone.id === slotId)
     const slot = slotsForDate(date, { ...cleaningSettings, startDate: cleaningSettings.startDate || date })
       .find(candidate => candidate.slotId === slotId)
@@ -105,14 +105,18 @@ export function useCleaning() {
     try {
       await setDoc(taskRef(taskKey), {
         date, slotId: slot.slotId, zoneId: slot.zoneId, zoneLabel: slot.zoneLabel,
-        assignedTo: userProfile.id, status: 'done', doneBy: userProfile.id,
-        doneAt: serverTimestamp(), source: 'historical', createdAt: serverTimestamp(),
+        assignedTo, status, source: 'historical', createdAt: serverTimestamp(),
+        ...(status === 'done' ? { doneBy: userProfile.id, doneAt: serverTimestamp() } : { missedAt: serverTimestamp() }),
       }, { merge: true })
-      await recordActivity({
-        taskKey, date, zoneId: slot.zoneId, zoneLabel: slot.zoneLabel,
-        type: 'historical_done', assignedTo: userProfile.id,
-        actorId: userProfile.id, actorName: userProfile.name,
-      })
+      if (status === 'missed') {
+        await applyMissedPenalty({ ...slot, taskKey, date, assignedTo }, assignedTo, 'historical_missed')
+      } else {
+        await recordActivity({
+          taskKey, date, zoneId: slot.zoneId, zoneLabel: slot.zoneLabel,
+          type: 'historical_done', assignedTo,
+          actorId: userProfile.id, actorName: userProfile.name,
+        })
+      }
     } catch (e) {
       setError('Error al añadir la limpieza pasada: ' + e.message)
       throw e
