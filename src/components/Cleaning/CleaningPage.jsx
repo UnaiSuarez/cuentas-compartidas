@@ -13,7 +13,7 @@ import CleaningStats from './CleaningStats'
 import CleaningSettingsPanel from './CleaningSettingsPanel'
 import CleaningFinesLog from './CleaningFinesLog'
 import CleaningActivityLog from './CleaningActivityLog'
-import { RecurringClaimModal, JustificationModal } from './CleaningActionModals'
+import { RecurringClaimModal, JustificationModal, HistoricalCleaningModal } from './CleaningActionModals'
 
 const STATUS_LABEL = {
   pending: null,
@@ -147,7 +147,7 @@ function SlotCard({ slot, members, isAdmin, myUid, mode, onDone, onClaim, onClai
 export default function CleaningPage() {
   const { userProfile, groupMembers, isAdmin, cleaningTasks, cleaningActivity, cleaningSettings, fines } = useApp()
   const {
-    tasksByKey, markDone, claimSlot, claimRecurring, assignSlot, unassignSlot, undoMissed, disputeMark,
+    tasksByKey, markDone, claimSlot, claimRecurring, addHistoricalCleaning, assignSlot, unassignSlot, undoMissed, disputeMark,
     submitJustification, voteJustification,
     runChecks, updateCleaningSettings, submitting,
   } = useCleaning()
@@ -157,6 +157,7 @@ export default function CleaningPage() {
   const [confetti, setConfetti] = useState(false)
   const [recurringSlot, setRecurringSlot] = useState(null)
   const [justificationSlot, setJustificationSlot] = useState(null)
+  const [historicalDate, setHistoricalDate] = useState(null)
 
   const checkedRef = useRef(false)
   useEffect(() => {
@@ -171,6 +172,7 @@ export default function CleaningPage() {
   }, [selectedDate, cleaningSettings, groupMembers, tasksByKey])
 
   const isToday = selectedDate === todayStr()
+  const isPast = selectedDate < todayStr()
 
   async function handleDone(slot) {
     await markDone(slot)
@@ -187,6 +189,7 @@ export default function CleaningPage() {
       <Confetti trigger={confetti}/>
       {recurringSlot && <RecurringClaimModal slot={recurringSlot} onSubmit={(start, end) => claimRecurring(recurringSlot, start, end)} onClose={() => setRecurringSlot(null)} submitting={submitting}/>}
       {justificationSlot && <JustificationModal onSubmit={reason => submitJustification(justificationSlot, reason)} onClose={() => setJustificationSlot(null)} submitting={submitting}/>}
+      {historicalDate && <HistoricalCleaningModal date={historicalDate} settings={cleaningSettings} onSubmit={slotId => addHistoricalCleaning(historicalDate, slotId)} onClose={() => setHistoricalDate(null)} submitting={submitting}/>}
 
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-white">Limpieza en casa</h2>
@@ -255,9 +258,23 @@ export default function CleaningPage() {
                     Configurar ahora
                   </button>
                 )}
+                {isPast && (
+                  <button onClick={() => setHistoricalDate(selectedDate)}
+                    className="mt-3 flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-600/10 px-3 py-1.5 text-xs text-emerald-400 transition-all hover:bg-emerald-600/20">
+                    <Check size={13}/> Añadir limpieza pasada
+                  </button>
+                )}
               </>
             ) : (
-              <p className="text-sm">Este día no toca limpiar.</p>
+              <>
+                <p className="text-sm">Este día no toca limpiar.</p>
+                {isPast && (
+                  <button onClick={() => setHistoricalDate(selectedDate)}
+                    className="mt-3 flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-600/10 px-3 py-1.5 text-xs text-emerald-400 transition-all hover:bg-emerald-600/20">
+                    <Check size={13}/> Añadir limpieza pasada
+                  </button>
+                )}
+              </>
             )}
           </div>
         )}

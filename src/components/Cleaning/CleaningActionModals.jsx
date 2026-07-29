@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CalendarRange, FileText, X } from 'lucide-react'
+import { CalendarRange, Check, FileText, X } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 
@@ -75,6 +75,38 @@ export function JustificationModal({ onSubmit, onClose, submitting }) {
         </label>
         <button type="submit" disabled={submitting || !reason.trim()} className="w-full rounded-xl bg-amber-600 py-2.5 text-sm font-medium text-white hover:bg-amber-500 disabled:opacity-50">
           Enviar a aprobación
+        </button>
+      </form>
+    </ModalShell>
+  )
+}
+
+export function HistoricalCleaningModal({ date, settings, onSubmit, onClose, submitting }) {
+  const slots = settings.granularity === 'task'
+    ? settings.zones || []
+    : [{ id: 'day', label: 'Limpieza general', icon: '🧹' }]
+  const [slotId, setSlotId] = useState(slots[0]?.id || 'day')
+  const dateLabel = format(new Date(`${date}T00:00:00`), "d 'de' MMMM", { locale: es })
+
+  async function submit(event) {
+    event.preventDefault()
+    await onSubmit(slotId)
+    onClose()
+  }
+
+  return (
+    <ModalShell title="Añadir limpieza pasada" icon={<Check size={18} className="text-emerald-400"/>} onClose={onClose}>
+      <form onSubmit={submit} className="space-y-4">
+        <p className="text-sm text-slate-400">Se guardará como hecha por ti el {dateLabel}.</p>
+        {slots.length > 1 && (
+          <label className="block text-xs text-slate-400">Tarea
+            <select value={slotId} onChange={event => setSlotId(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-2 text-sm text-white">
+              {slots.map(slot => <option key={slot.id} value={slot.id}>{slot.icon} {slot.label}</option>)}
+            </select>
+          </label>
+        )}
+        <button type="submit" disabled={submitting || !slots.length} className="w-full rounded-xl bg-emerald-600 py-2.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50">
+          Añadir como hecha
         </button>
       </form>
     </ModalShell>
