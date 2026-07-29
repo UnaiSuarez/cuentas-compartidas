@@ -2,10 +2,11 @@ import { useState } from 'react'
 import { ChevronDown, ChevronUp, HelpCircle } from 'lucide-react'
 import { useApp }                    from '../../context/AppContext'
 import { calculateBalanceBreakdown } from '../../utils/calculateSettlement'
+import { activeUniqueFines } from '../../utils/cleaningFines'
 import { formatCurrency }            from '../../utils/formatters'
 
 export default function BalanceExplainer() {
-  const { transactions, groupMembers } = useApp()
+  const { transactions, groupMembers, fines } = useApp()
   const [open, setOpen] = useState(false)
 
   if (!groupMembers.length || !transactions.length) return null
@@ -13,7 +14,7 @@ export default function BalanceExplainer() {
   const nonSettlement = transactions.filter(tx => !tx.isSettlement)
   if (!nonSettlement.length) return null
 
-  const { userBreakdowns, poolBalance } = calculateBalanceBreakdown(nonSettlement, groupMembers)
+  const { userBreakdowns, poolBalance } = calculateBalanceBreakdown(nonSettlement, groupMembers, activeUniqueFines(fines))
 
   return (
     <div className="glass rounded-2xl overflow-hidden">
@@ -40,7 +41,7 @@ export default function BalanceExplainer() {
               {formatCurrency(poolBalance, true)}
             </p>
             <p className="text-xs text-slate-500 mt-0.5">
-              Total aportado − total gastado por todos
+              Total aportado − total gastado. Las multas van aparte.
             </p>
           </div>
 
@@ -55,6 +56,8 @@ export default function BalanceExplainer() {
                 rows.push({ label: 'Aportó al fondo',    value:  b.contributed  })
               if (b.expenseShare > 0)
                 rows.push({ label: 'Su parte en gastos', value: -b.expenseShare })
+              if (b.fines > 0)
+                rows.push({ label: 'Multas de limpieza', value: -b.fines })
               if (b.paidAsProxy > 0)
                 rows.push({ label: 'Pagó físicamente (informativo)', value: b.paidAsProxy, info: true })
 
@@ -95,7 +98,7 @@ export default function BalanceExplainer() {
           </div>
 
           <p className="text-xs text-slate-600 text-center">
-            Saldo = dinero aportado − parte en gastos. La suma de todos los saldos = fondo colectivo.
+            Saldo = dinero aportado − parte en gastos − multas. El fondo de multas no modifica el fondo colectivo.
           </p>
         </div>
       )}

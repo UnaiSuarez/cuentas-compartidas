@@ -4,6 +4,7 @@ import { Landmark, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { formatCurrency } from '../../utils/formatters'
+import { activeUniqueFines } from '../../utils/cleaningFines'
 
 /**
  * Fondo de multas: totalmente aparte del saldo colectivo/transacciones.
@@ -14,7 +15,7 @@ import { formatCurrency } from '../../utils/formatters'
 export default function CleaningFinesLog({ fines }) {
   const [open, setOpen] = useState(false)
 
-  const activeFines = useMemo(() => fines.filter(f => f.status !== 'reversed'), [fines])
+  const activeFines = useMemo(() => activeUniqueFines(fines), [fines])
   const total = useMemo(() => activeFines.reduce((s, f) => s + (f.amount || 0), 0), [activeFines])
 
   if (!fines.length) return null
@@ -42,7 +43,7 @@ export default function CleaningFinesLog({ fines }) {
             className="overflow-hidden"
           >
             <div className="space-y-1.5 mt-4 pt-4 border-t border-slate-800">
-              {fines.map(f => {
+              {[...activeFines, ...fines.filter(f => f.status === 'reversed')].map(f => {
                 const isReversed = f.status === 'reversed'
                 const dateLabel = f.date ? format(new Date(`${f.date}T00:00:00`), 'd MMM', { locale: es }) : ''
                 return (

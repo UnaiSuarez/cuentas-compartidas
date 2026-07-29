@@ -11,15 +11,17 @@
 import { useMemo } from 'react'
 import { useApp }  from '../context/AppContext'
 import { calculateGroupSummary } from '../utils/calculateSettlement'
+import { activeUniqueFines } from '../utils/cleaningFines'
 
 export function useSettlement() {
-  const { transactions, groupMembers } = useApp()
+  const { transactions, groupMembers, fines } = useApp()
 
   const summary = useMemo(() => {
     if (!transactions.length && !groupMembers.length) return {
       totalIngresos:  0,
       totalGastos:    0,
       saldoColectivo: 0,
+      fondoMultas:    0,
       balances:       {},
       pagosOptimos:   [],
     }
@@ -35,8 +37,8 @@ export function useSettlement() {
     }))
 
     const normalizedUsers = groupMembers.map(m => ({ id: m.id }))
-    return calculateGroupSummary(normalizedTx, normalizedUsers)
-  }, [transactions, groupMembers])
+    return calculateGroupSummary(normalizedTx, normalizedUsers, activeUniqueFines(fines))
+  }, [transactions, groupMembers, fines])
 
   return { summary }
 }
