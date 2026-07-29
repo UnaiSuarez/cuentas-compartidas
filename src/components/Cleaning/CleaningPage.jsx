@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { SlidersHorizontal, Check, UserPlus, UserMinus, X, CalendarOff } from 'lucide-react'
+import { SlidersHorizontal, Check, UserPlus, UserMinus, X, CalendarOff, Undo2 } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import { useCleaning } from '../../hooks/useCleaning'
 import { buildCalendarDays, todayStr } from '../../utils/calculateCleaningRotation'
@@ -18,7 +18,7 @@ const STATUS_LABEL = {
   missed:  { text: '❌ No se hizo', cls: 'text-red-400' },
 }
 
-function SlotCard({ slot, members, isAdmin, myUid, mode, onDone, onClaim, onAssign, onUnassign, submitting }) {
+function SlotCard({ slot, members, isAdmin, myUid, mode, onDone, onClaim, onAssign, onUnassign, onUndo, submitting }) {
   const [assigning, setAssigning] = useState(false)
   const member = members.find(m => m.id === slot.assignedTo)
   const Av = member ? getAvatarByKey(member.avatar) : null
@@ -44,6 +44,14 @@ function SlotCard({ slot, members, isAdmin, myUid, mode, onDone, onClaim, onAssi
       </div>
 
       {status && <span className={`text-xs font-medium shrink-0 ${status.cls}`}>{status.text}</span>}
+
+      {slot.status === 'missed' && (isMine || isAdmin) && (
+        <button onClick={() => onUndo(slot)} disabled={submitting} title="Sí lo hice, deshacer el fallo"
+          className="flex items-center gap-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-300
+                     px-3 py-1.5 rounded-lg transition-all disabled:opacity-50 shrink-0">
+          <Undo2 size={13}/> Sí lo hice
+        </button>
+      )}
 
       {slot.status === 'pending' && (
         <div className="flex items-center gap-1.5 shrink-0">
@@ -94,7 +102,7 @@ function SlotCard({ slot, members, isAdmin, myUid, mode, onDone, onClaim, onAssi
 export default function CleaningPage() {
   const { userProfile, groupMembers, isAdmin, cleaningTasks, cleaningSettings } = useApp()
   const {
-    tasksByKey, markDone, claimSlot, assignSlot, unassignSlot,
+    tasksByKey, markDone, claimSlot, assignSlot, unassignSlot, undoMissed,
     runChecks, updateCleaningSettings, submitting,
   } = useCleaning()
 
@@ -170,6 +178,7 @@ export default function CleaningPage() {
                 onClaim={claimSlot}
                 onAssign={assignSlot}
                 onUnassign={unassignSlot}
+                onUndo={undoMissed}
                 submitting={submitting}
               />
             ))}
