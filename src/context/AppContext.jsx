@@ -34,6 +34,7 @@ export function AppProvider({ children }) {
   const [categories,    setCategories]    = useState(defaultCategories())
   const [groupSettings, setGroupSettings] = useState(null)
   const [cleaningTasks,    setCleaningTasks]    = useState([])
+  const [cleaningActivity, setCleaningActivity] = useState([])
   const [cleaningSettings, setCleaningSettings] = useState(defaultCleaningSettings())
   const [fines,            setFines]            = useState([])
 
@@ -45,6 +46,7 @@ export function AppProvider({ children }) {
   const unsubMsgRef      = useRef(null)
   const unsubGroupRef    = useRef(null)
   const unsubCleaningRef = useRef(null)
+  const unsubActivityRef = useRef(null)
   const unsubFinesRef    = useRef(null)
 
   const isAdmin = userProfile?.id != null && groupInfo?.createdBy === userProfile.id
@@ -112,6 +114,7 @@ export function AppProvider({ children }) {
     unsubMsgRef.current?.()
     unsubGroupRef.current?.()
     unsubCleaningRef.current?.()
+    unsubActivityRef.current?.()
     unsubFinesRef.current?.()
   }
 
@@ -126,6 +129,7 @@ export function AppProvider({ children }) {
     setMessages([])
     setGroupSettings(null)
     setCleaningTasks([])
+    setCleaningActivity([])
     setCleaningSettings(defaultCleaningSettings())
     setFines([])
   }
@@ -138,6 +142,7 @@ export function AppProvider({ children }) {
     setGroupSettings(null)
     setCategories(defaultCategories())
     setCleaningTasks([])
+    setCleaningActivity([])
     setCleaningSettings(defaultCleaningSettings())
     setFines([])
   }
@@ -178,6 +183,11 @@ export function AppProvider({ children }) {
     unsubCleaningRef.current = onSnapshot(
       query(collection(db, 'groups', gId, 'cleaningTasks'), orderBy('date', 'desc')),
       (snap) => setCleaningTasks(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    )
+
+    unsubActivityRef.current = onSnapshot(
+      query(collection(db, 'groups', gId, 'cleaningActivity'), orderBy('createdAt', 'desc')),
+      (snap) => setCleaningActivity(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     )
 
     unsubFinesRef.current = onSnapshot(
@@ -307,7 +317,7 @@ export function AppProvider({ children }) {
     transactions,
     messages,
     categories, groupSettings,
-    cleaningTasks, cleaningSettings, fines,
+    cleaningTasks, cleaningActivity, cleaningSettings, fines,
     isAdmin,
     loading, error, setError,
     logout, updateUserProfile,

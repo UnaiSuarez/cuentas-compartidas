@@ -19,7 +19,8 @@
  *
  * Doc de /groups/{groupId}/cleaningTasks/{date_slotId}:
  *   date, slotId, zoneId, zoneLabel, assignedTo, status ('pending'|'done'|'missed'),
- *   source ('auto'|'signup'|'admin'), doneBy?, doneAt?, createdAt
+ *   source ('auto'|'signup'|'recurring'|'admin'), doneBy?, doneAt?, createdAt,
+ *   justification?: { reason, submittedBy, approvals, deadline }
  */
 
 import { addDays, format } from 'date-fns'
