@@ -131,11 +131,9 @@ export function calculateBalanceBreakdown(transactions, users) {
     const share        = tx.amount / n
 
     if (tx.type === 'income' || tx.tipo === 'ingreso') {
-      // El fondo crece siempre, se acredite o no a una persona concreta
-      // (ej. multas: paidBy:'common' — el dinero no es de nadie, es del grupo).
-      poolBalance += tx.amount
-      if (paidBy && paidBy !== 'common' && data[paidBy]) {
+      if (data[paidBy]) {
         data[paidBy].contributed += tx.amount
+        poolBalance += tx.amount
       }
     } else if (tx.paymentMode === 'external') {
       // Pagador acreditado sin tocar pool; participantes debitados.
