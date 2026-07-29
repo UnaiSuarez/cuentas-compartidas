@@ -66,7 +66,7 @@ function SlotCard({ slot, members, isAdmin, myUid, mode, onDone, onClaim, onClai
           </button>
         )}
 
-        {slot.status === 'pending' && (isMine || isAdmin) && (
+        {slot.status === 'pending' && slot.assignedTo && (isMine || isAdmin) && (
           <button onClick={() => onDone(slot)} disabled={submitting}
             title={!isMine ? 'Marcar como hecho en nombre de esta persona' : undefined}
             className="flex items-center gap-1 text-xs bg-emerald-600/20 text-emerald-400 border border-emerald-500/30
@@ -113,9 +113,9 @@ function SlotCard({ slot, members, isAdmin, myUid, mode, onDone, onClaim, onClai
           </button>
         )}
 
-        {slot.status === 'pending' && mode === 'manual' && isAdmin && slot.assignedTo && !isMine && (
+        {isAdmin && slot.assignedTo && !(slot.status === 'pending' && mode === 'manual' && isMine) && (
           <button onClick={() => onUnassign(slot)} disabled={submitting}
-            className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all" title="Quitar asignación">
+            className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all" title="Quitar asignación y restablecer tarea">
             <UserMinus size={14}/>
           </button>
         )}
