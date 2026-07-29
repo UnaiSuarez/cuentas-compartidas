@@ -189,7 +189,7 @@ export default function CleaningPage() {
       <Confetti trigger={confetti}/>
       {recurringSlot && <RecurringClaimModal slot={recurringSlot} onSubmit={(start, end) => claimRecurring(recurringSlot, start, end)} onClose={() => setRecurringSlot(null)} submitting={submitting}/>}
       {justificationSlot && <JustificationModal onSubmit={reason => submitJustification(justificationSlot, reason)} onClose={() => setJustificationSlot(null)} submitting={submitting}/>}
-      {historicalDate && <HistoricalCleaningModal date={historicalDate} settings={cleaningSettings} onSubmit={slotId => addHistoricalCleaning(historicalDate, slotId)} onClose={() => setHistoricalDate(null)} submitting={submitting}/>}
+      {historicalDate && <HistoricalCleaningModal date={historicalDate} settings={cleaningSettings} members={groupMembers} userProfile={userProfile} isAdmin={isAdmin} onSubmit={(slotId, assignedTo, status) => addHistoricalCleaning(historicalDate, slotId, assignedTo, status)} onClose={() => setHistoricalDate(null)} submitting={submitting}/>}
 
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-white">Limpieza en casa</h2>
