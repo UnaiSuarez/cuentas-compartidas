@@ -184,6 +184,15 @@ export async function notifyCleaningMissed(missedMember, zoneLabel, groupMembers
   })
 }
 
+// ─── Limpieza: justificante pendiente ───────────────────────────────────────
+export async function notifyCleaningJustification(reviewers, memberName, zoneLabel, dateLabel) {
+  await dispatch(reviewers, {
+    title: '🧾 Justificante pendiente',
+    body: `${memberName} ha pedido justificar "${zoneLabel}" del ${dateLabel}. Revisa y vota.`,
+    data: { screen: 'limpieza' },
+  })
+}
+
 // ─── Limpieza: día sin nadie apuntado (modo manual) ──────────────────────────
 export async function notifyCleaningUnassigned(zoneLabel, dateLabel, groupMembers) {
   if (!cooldownOk(`clean_unassigned_${zoneLabel}_${dateLabel}`, 20 * 3_600_000)) return

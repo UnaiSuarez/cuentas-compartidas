@@ -71,12 +71,12 @@ export default function CleaningCalendar({ settings, members, tasksByKey, select
               <div className="flex flex-col gap-0.5 w-full">
                 {day.slots.map(slot => {
                   const member = members.find(m => m.id === slot.assignedTo)
-                  const nameColor = slot.status === 'missed' ? 'text-red-400'
+                  const nameColor = slot.status === 'missed' || slot.status === 'justification_pending' ? 'text-red-400'
                     : slot.status === 'done' ? 'text-emerald-400' : 'text-slate-400'
                   return (
                     <div key={slot.slotId} className="flex items-center gap-0.5 w-full leading-tight">
                       {slot.status === 'done'   && <Check size={9} className="text-emerald-400 shrink-0"/>}
-                      {slot.status === 'missed' && <XIcon size={9} className="text-red-400 shrink-0"/>}
+                      {(slot.status === 'missed' || slot.status === 'justification_pending') && <XIcon size={9} className="text-red-400 shrink-0"/>}
                       {slot.status === 'pending' && (
                         <span className="w-1.5 h-1.5 rounded-full shrink-0"
                           style={{ backgroundColor: member?.color || '#475569' }}/>

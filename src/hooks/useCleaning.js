@@ -22,7 +22,7 @@ import {
 } from '../utils/calculateCleaningRotation'
 import {
   notifyCleaningAssigned, notifyCleaningDueToday,
-  notifyCleaningMissed, notifyCleaningUnassigned,
+  notifyCleaningMissed, notifyCleaningUnassigned, notifyCleaningJustification,
 } from '../utils/pushNotifications'
 
 const CHECK_WINDOW_PAST = 14 // días hacia atrás a revisar en busca de fallos
@@ -336,6 +336,7 @@ export function useCleaning() {
   /** Presenta un justificante: todos los demás miembros deben validarlo. */
   async function submitJustification(slot, reason) {
     if (!groupId || !userProfile || !slot.assignedTo || !reason.trim()) return
+    const requiredVoterIds = groupMembers.filter(member => member.id !== userProfile.id).map(member => member.id)
     setSubmitting(true)
     setError(null)
     try {
@@ -344,7 +345,7 @@ export function useCleaning() {
         assignedTo: slot.assignedTo, status: 'justification_pending', source: slot.task?.source || 'auto',
         justification: {
           reason: reason.trim(), submittedBy: userProfile.id, submittedByName: userProfile.name,
-          approvals: {}, deadline: dateStr(addDays(new Date(`${slot.date}T00:00:00`), 2)),
+          requiredVoterIds, approvals: {}, deadline: dateStr(addDays(new Date(`${slot.date}T00:00:00`), 2)),
         },
         ...(slot.task ? {} : { createdAt: serverTimestamp() }),
       }, { merge: true })
@@ -353,6 +354,10 @@ export function useCleaning() {
         actorId: userProfile.id, actorName: userProfile.name, reason: reason.trim(),
       })
       await sendSystemMessage(`🧾 ${userProfile.name} ha presentado un justificante para "${slot.zoneLabel}" del ${slot.date}. El resto del grupo debe validarlo.`)
+      await notifyCleaningJustification(
+        groupMembers.filter(member => requiredVoterIds.includes(member.id)),
+        userProfile.name, slot.zoneLabel, slot.date
+      )
     } catch (e) {
       setError('Error al enviar el justificante: ' + e.message)
       throw e
@@ -375,10 +380,12 @@ export function useCleaning() {
         if (justification.submittedBy === userProfile.id) throw new Error('No puedes votar tu propio justificante.')
         if (justification.approvals?.[userProfile.id] || justification.rejections?.[userProfile.id]) throw new Error('Ya has votado este justificante.')
 
-        const voters = groupMembers.filter(m => m.id !== justification.submittedBy).map(m => m.id)
+        const voters = justification.requiredVoterIds || groupMembers.filter(m => m.id !== justification.submittedBy).map(m => m.id)
+        if (!voters.includes(userProfile.id)) throw new Error('No formas parte de los revisores de este justificante.')
         const approvals = { ...(justification.approvals || {}), ...(approved ? { [userProfile.id]: userProfile.name } : {}) }
         const rejections = { ...(justification.rejections || {}), ...(!approved ? { [userProfile.id]: userProfile.name } : {}) }
         const patch = { 'justification.approvals': approvals, 'justification.rejections': rejections }
+        if (!justification.requiredVoterIds) patch['justification.requiredVoterIds'] = voters
         if (!approved) patch.status = 'missed'
         if (approved && voters.every(uid => approvals[uid])) {
           patch.status = 'excused'
