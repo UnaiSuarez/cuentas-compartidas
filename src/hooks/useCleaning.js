@@ -11,13 +11,14 @@ import { useState, useCallback } from 'react'
 import {
   doc, setDoc, updateDoc, deleteField,
   collection, addDoc, serverTimestamp,
-  runTransaction,
+  runTransaction, writeBatch,
 } from 'firebase/firestore'
+import { addDays } from 'date-fns'
 import { db } from '../config/firebase'
 import { useApp } from '../context/AppContext'
 import { useChat } from './useChat'
 import {
-  autoAssignee, buildCalendarDays, taskKeyOf, todayStr,
+  autoAssignee, buildCalendarDays, taskKeyOf, todayStr, dateStr, slotsForDate,
 } from '../utils/calculateCleaningRotation'
 import {
   notifyCleaningAssigned, notifyCleaningDueToday,
@@ -43,6 +44,22 @@ export function useCleaning() {
     return doc(db, 'groups', groupId, 'cleaningTasks', taskKey)
   }
 
+  async function recordActivity(event) {
+    await addDoc(collection(db, 'groups', groupId, 'cleaningActivity'), {
+      ...event,
+      createdAt: serverTimestamp(),
+    })
+  }
+
+  function activityBase(slot) {
+    return {
+      taskKey: slot.taskKey,
+      date: slot.date,
+      zoneLabel: slot.zoneLabel,
+      zoneId: slot.zoneId,
+    }
+  }
+
   /** Marca un slot como limpiado. */
   async function markDone(slot) {
     if (!groupId || !userProfile) return
@@ -59,6 +76,10 @@ export function useCleaning() {
         source: existing?.source || 'auto',
         ...(existing ? {} : { createdAt: serverTimestamp() }),
       }, { merge: true })
+      await recordActivity({
+        ...activityBase(slot), type: 'done', actorId: userProfile.id,
+        actorName: userProfile.name, assignedTo: slot.assignedTo,
+      })
     } catch (e) {
       setError('Error al marcar como hecho: ' + e.message)
       throw e
@@ -80,6 +101,10 @@ export function useCleaning() {
         source: 'signup',
         createdAt: serverTimestamp(),
       }, { merge: true })
+      await recordActivity({
+        ...activityBase(slot), type: 'claimed', actorId: userProfile.id,
+        actorName: userProfile.name, assignedTo: userProfile.id,
+      })
     } catch (e) {
       setError('Error al apuntarte: ' + e.message)
       throw e
@@ -88,21 +113,86 @@ export function useCleaning() {
     }
   }
 
-  /** El admin asigna un slot a un miembro concreto (modo manual). */
+  /** Se apunta a la misma tarea cada semana dentro de un intervalo. */
+  async function claimRecurring(slot, startDate, endDate) {
+    if (!groupId || !userProfile || !startDate || !endDate || startDate > endDate) return
+    const days = []
+    for (let date = new Date(`${startDate}T00:00:00`); date <= new Date(`${endDate}T00:00:00`); date = addDays(date, 1)) {
+      const dateKey = dateStr(date)
+      if (slotsForDate(dateKey, cleaningSettings).some(candidate => candidate.slotId === slot.slotId)) days.push(dateKey)
+    }
+    if (!days.length) throw new Error('No hay días de limpieza configurados en ese intervalo para esta tarea.')
+    if (days.length > 180) throw new Error('El intervalo es demasiado largo. Elige un máximo de 180 días de limpieza.')
+    const availableDays = days.filter(date => {
+      const existing = tasksByKey[taskKeyOf(date, slot.slotId)]
+      return !existing || (existing.status === 'pending' && (!existing.assignedTo || existing.assignedTo === userProfile.id))
+    })
+    if (!availableDays.length) throw new Error('Todas esas tareas ya están asignadas o cerradas.')
+
+    setSubmitting(true)
+    setError(null)
+    try {
+      const batch = writeBatch(db)
+      availableDays.forEach(date => {
+        const taskKey = taskKeyOf(date, slot.slotId)
+        batch.set(taskRef(taskKey), {
+          date, slotId: slot.slotId, zoneId: slot.zoneId, zoneLabel: slot.zoneLabel,
+          assignedTo: userProfile.id, status: 'pending', source: 'recurring', createdAt: serverTimestamp(),
+        }, { merge: true })
+        batch.set(doc(collection(db, 'groups', groupId, 'cleaningActivity')), {
+          taskKey, date, zoneLabel: slot.zoneLabel, zoneId: slot.zoneId,
+          type: 'recurring_claimed', actorId: userProfile.id, actorName: userProfile.name,
+          assignedTo: userProfile.id, createdAt: serverTimestamp(),
+        })
+      })
+      await batch.commit()
+    } catch (e) {
+      setError('Error al crear las asignaciones repetidas: ' + e.message)
+      throw e
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  /**
+   * El admin asigna (o reasigna) un slot a un miembro concreto — cualquier
+   * modo, cualquier estado y cualquier fecha (pasada o futura), para poder
+   * corregir días antiguos. Si el slot ya tenía un estado resuelto
+   * (done/missed), lo conserva — solo corrige quién queda como responsable,
+   * no borra el historial de si se hizo o no.
+   */
   async function assignSlot(slot, targetUid) {
     if (!groupId) return
     setSubmitting(true)
     setError(null)
     try {
+      const existing = tasksByKey[slot.taskKey]
+      const previousUid = existing?.assignedTo || slot.assignedTo
       await setDoc(taskRef(slot.taskKey), {
         date: slot.date, slotId: slot.slotId, zoneId: slot.zoneId, zoneLabel: slot.zoneLabel,
         assignedTo: targetUid,
-        status: 'pending',
+        status: existing?.status || 'pending',
         source: 'admin',
-        createdAt: serverTimestamp(),
+        ...(existing ? {} : { createdAt: serverTimestamp() }),
       }, { merge: true })
+      if (existing?.status === 'missed' && existing.fineId) {
+        const target = groupMembers.find(m => m.id === targetUid)
+        await updateDoc(doc(db, 'groups', groupId, 'fines', existing.fineId), {
+          memberId: targetUid,
+          memberName: target?.name || 'Alguien',
+          reassignedAt: serverTimestamp(),
+          reassignedBy: userProfile?.id || null,
+        })
+      }
+      await recordActivity({
+        ...activityBase(slot), type: previousUid === targetUid ? 'assigned' : 'reassigned',
+        actorId: userProfile?.id || null, actorName: userProfile?.name || 'Admin',
+        assignedTo: targetUid, previousAssignedTo: previousUid || null, status: existing?.status || 'pending',
+      })
       const target = groupMembers.find(m => m.id === targetUid)
-      if (target) await notifyCleaningAssigned(target, slot.zoneLabel, slot.date)
+      if (target && (!existing || existing.status === 'pending')) {
+        await notifyCleaningAssigned(target, slot.zoneLabel, slot.date)
+      }
     } catch (e) {
       setError('Error al asignar: ' + e.message)
       throw e
@@ -121,6 +211,10 @@ export function useCleaning() {
         assignedTo: deleteField(),
         source: deleteField(),
       })
+      await recordActivity({
+        ...activityBase(slot), type: 'unassigned', actorId: userProfile?.id || null,
+        actorName: userProfile?.name || 'Alguien', previousAssignedTo: slot.assignedTo,
+      })
     } catch (e) {
       setError('Error al desasignar: ' + e.message)
       throw e
@@ -129,12 +223,36 @@ export function useCleaning() {
     }
   }
 
-  async function handleMissed(slot) {
+  async function applyMissedPenalty(slot, assignedUid, reason = 'missed') {
+    const missedMember = groupMembers.find(m => m.id === assignedUid)
+    const label = `${slot.zoneLabel} (${slot.date})`
+
+    if (cleaningSettings.penalty?.fine) {
+      const fineRef = await addDoc(collection(db, 'groups', groupId, 'fines'), {
+        memberId: assignedUid, memberName: missedMember?.name || 'Alguien',
+        amount: Number(cleaningSettings.penalty.fineAmount) || 0,
+        zoneLabel: slot.zoneLabel, date: slot.date, taskKey: slot.taskKey,
+        status: 'active', createdAt: serverTimestamp(),
+      })
+      await updateDoc(taskRef(slot.taskKey), { fineId: fineRef.id })
+    }
+
+    await recordActivity({
+      ...activityBase(slot), type: reason, assignedTo: assignedUid,
+      actorId: userProfile?.id || null, actorName: userProfile?.name || 'Sistema',
+    })
+    if (cleaningSettings.penalty?.enabled) {
+      await sendSystemMessage(`🧹 ${missedMember?.name || 'Alguien'} no marcó "${label}" como hecha.${cleaningSettings.penalty.fine ? ' Se aportó una multa al fondo común.' : ''}`)
+      await notifyCleaningMissed(missedMember, label, groupMembers)
+    }
+  }
+
+  async function handleMissed(slot, reason = 'missed') {
     const assignedUid = await runTransaction(db, async (tx) => {
       const ref  = taskRef(slot.taskKey)
       const snap = await tx.get(ref)
       const current = snap.exists() ? snap.data() : null
-      if (current?.status === 'done' || current?.status === 'missed') return null
+      if (current?.status === 'done' || current?.status === 'missed' || current?.status === 'excused') return null
 
       const resolvedUid = current?.assignedTo
         ?? autoAssignee(slot.date, slot.slotId, groupMembers, cleaningSettings)
@@ -154,26 +272,74 @@ export function useCleaning() {
 
     if (!assignedUid) return
 
-    const missedMember = groupMembers.find(m => m.id === assignedUid)
-    const label = `${slot.zoneLabel} (${slot.date})`
+    await applyMissedPenalty(slot, assignedUid, reason)
+  }
 
-    if (cleaningSettings.penalty?.fine) {
-      // Fondo de multas: ledger totalmente aparte del saldo colectivo/transacciones.
-      // Ese dinero no es de nadie — solo se resta de quien falla, nunca se reparte
-      // ni se suma al saldo de nadie más.
-      const fineRef = await addDoc(collection(db, 'groups', groupId, 'fines'), {
-        memberId: assignedUid, memberName: missedMember?.name || 'Alguien',
-        amount: Number(cleaningSettings.penalty.fineAmount) || 0,
-        zoneLabel: slot.zoneLabel, date: slot.date, taskKey: slot.taskKey,
-        status: 'active',
-        createdAt: serverTimestamp(),
+  /** Presenta un justificante: todos los demás miembros deben validarlo. */
+  async function submitJustification(slot, reason) {
+    if (!groupId || !userProfile || !slot.assignedTo || !reason.trim()) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      await setDoc(taskRef(slot.taskKey), {
+        date: slot.date, slotId: slot.slotId, zoneId: slot.zoneId, zoneLabel: slot.zoneLabel,
+        assignedTo: slot.assignedTo, status: 'justification_pending', source: slot.task?.source || 'auto',
+        justification: {
+          reason: reason.trim(), submittedBy: userProfile.id, submittedByName: userProfile.name,
+          approvals: {}, deadline: dateStr(addDays(new Date(`${slot.date}T00:00:00`), 2)),
+        },
+        ...(slot.task ? {} : { createdAt: serverTimestamp() }),
+      }, { merge: true })
+      await recordActivity({
+        ...activityBase(slot), type: 'justification_submitted', assignedTo: slot.assignedTo,
+        actorId: userProfile.id, actorName: userProfile.name, reason: reason.trim(),
       })
-      await updateDoc(taskRef(slot.taskKey), { fineId: fineRef.id })
+      await sendSystemMessage(`🧾 ${userProfile.name} ha presentado un justificante para "${slot.zoneLabel}" del ${slot.date}. El resto del grupo debe validarlo.`)
+    } catch (e) {
+      setError('Error al enviar el justificante: ' + e.message)
+      throw e
+    } finally {
+      setSubmitting(false)
     }
+  }
 
-    if (cleaningSettings.penalty?.enabled) {
-      await sendSystemMessage(`🧹 ${missedMember?.name || 'Alguien'} no marcó "${label}" como hecha.${cleaningSettings.penalty.fine ? ' Se aportó una multa al fondo común.' : ''}`)
-      await notifyCleaningMissed(missedMember, label, groupMembers)
+  async function voteJustification(slot, approved) {
+    if (!groupId || !userProfile || !slot.task?.justification) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      const outcome = await runTransaction(db, async tx => {
+        const ref = taskRef(slot.taskKey)
+        const snap = await tx.get(ref)
+        const current = snap.data()
+        const justification = current?.justification
+        if (!justification || current.status !== 'justification_pending') throw new Error('El justificante ya no está pendiente.')
+        if (justification.submittedBy === userProfile.id) throw new Error('No puedes votar tu propio justificante.')
+        if (justification.approvals?.[userProfile.id] || justification.rejections?.[userProfile.id]) throw new Error('Ya has votado este justificante.')
+
+        const voters = groupMembers.filter(m => m.id !== justification.submittedBy).map(m => m.id)
+        const approvals = { ...(justification.approvals || {}), ...(approved ? { [userProfile.id]: userProfile.name } : {}) }
+        const rejections = { ...(justification.rejections || {}), ...(!approved ? { [userProfile.id]: userProfile.name } : {}) }
+        const patch = { 'justification.approvals': approvals, 'justification.rejections': rejections }
+        if (!approved) patch.status = 'missed'
+        if (approved && voters.every(uid => approvals[uid])) {
+          patch.status = 'excused'
+          patch.excusedAt = serverTimestamp()
+        }
+        tx.update(ref, patch)
+        return approved && voters.every(uid => approvals[uid]) ? 'excused' : approved ? 'approved' : 'rejected'
+      })
+      await recordActivity({
+        ...activityBase(slot), type: outcome === 'excused' ? 'justification_approved' : outcome === 'rejected' ? 'justification_rejected' : 'justification_vote',
+        assignedTo: slot.assignedTo, actorId: userProfile.id, actorName: userProfile.name,
+      })
+      if (outcome === 'rejected') await applyMissedPenalty(slot, slot.assignedTo, 'justification_rejected')
+      if (outcome === 'excused') await sendSystemMessage(`✅ El justificante de ${slot.task.justification.submittedByName} para "${slot.zoneLabel}" ha sido aprobado por todo el grupo.`)
+    } catch (e) {
+      setError('Error al votar el justificante: ' + e.message)
+      throw e
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -193,6 +359,10 @@ export function useCleaning() {
         doneBy: userProfile.id,
         doneAt: serverTimestamp(),
         correctedAt: serverTimestamp(),
+      })
+      await recordActivity({
+        ...activityBase(slot), type: 'missed_corrected', assignedTo: slot.assignedTo,
+        actorId: userProfile.id, actorName: userProfile.name,
       })
 
       if (slot.task.fineId) {
@@ -236,6 +406,10 @@ export function useCleaning() {
         disputedByName: userProfile.name,
         disputedAt: serverTimestamp(),
       })
+      await recordActivity({
+        ...activityBase(slot), type: 'disputed', assignedTo: slot.assignedTo,
+        actorId: userProfile.id, actorName: userProfile.name,
+      })
 
       const member = groupMembers.find(m => m.id === slot.assignedTo)
       await sendSystemMessage(
@@ -269,6 +443,11 @@ export function useCleaning() {
       for (const slot of day.slots) {
         if (day.date < today && slot.status === 'pending' && slot.assignedTo) {
           await handleMissed(slot)
+        } else if (
+          slot.status === 'justification_pending' && slot.task?.justification?.deadline &&
+          slot.task.justification.deadline < today
+        ) {
+          await handleMissed(slot, 'justification_expired')
         } else if (day.date === today && slot.status === 'pending' && slot.assignedTo === userProfile.id) {
           await notifyCleaningDueToday(userProfile, slot.zoneLabel)
         } else if (
@@ -283,7 +462,8 @@ export function useCleaning() {
 
   return {
     tasksByKey,
-    markDone, claimSlot, assignSlot, unassignSlot, undoMissed, disputeMark,
+    markDone, claimSlot, claimRecurring, assignSlot, unassignSlot, undoMissed, disputeMark,
+    submitJustification, voteJustification,
     runChecks,
     updateCleaningSettings,
     submitting, error, setError,
