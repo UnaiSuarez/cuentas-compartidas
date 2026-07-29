@@ -59,8 +59,10 @@ function toInputDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+const VISIBLE_STEP = 30
+
 export default function TransactionList() {
-  const { transactions, txLimit, loadMoreTransactions, groupMembers, categories, userProfile } = useApp()
+  const { transactions, groupMembers, categories, userProfile } = useApp()
   const { deleteTransaction } = useTransactions()
 
   const [showForm,     setShowForm]     = useState(false)
@@ -74,6 +76,7 @@ export default function TransactionList() {
   const [deleting,     setDeleting]     = useState(null)
   const [showExport,   setShowExport]   = useState(false)
   const [showImport,   setShowImport]   = useState(false)
+  const [visibleCount, setVisibleCount] = useState(VISIBLE_STEP)
 
   const listRef = useRef(null)
 
@@ -123,13 +126,17 @@ export default function TransactionList() {
     )
   ), [filtered, sortOrder])
 
+  // ── Recorte visual (no afecta a los cálculos de saldo, que usan siempre
+  // el histórico completo de `transactions` desde AppContext)
+  const visible = useMemo(() => sorted.slice(0, visibleCount), [sorted, visibleCount])
+
   // ── Stagger al cambiar filtros
   useEffect(() => {
     if (!listRef.current) return
     const items = listRef.current.querySelectorAll('[data-tx-item]')
     if (!items.length) return
     staggerReveal(items, { duration: 350, staggerMs: 30, translateY: 10 })
-  }, [sorted.length, search, dateFilter, typeFilter, catFilter, specificDate, sortOrder])
+  }, [visible.length, search, dateFilter, typeFilter, catFilter, specificDate, sortOrder])
 
   function openEdit(tx) { setEditData(tx);  setShowForm(true) }
   function openNew()    { setEditData(null); setShowForm(true) }
@@ -342,7 +349,9 @@ export default function TransactionList() {
       </div>
 
       <p className="text-xs text-slate-500">
-        {sorted.length} resultado{sorted.length !== 1 ? 's' : ''}
+        {visible.length < sorted.length
+          ? `Mostrando ${visible.length} de ${sorted.length} resultados`
+          : `${sorted.length} resultado${sorted.length !== 1 ? 's' : ''}`}
       </p>
 
       {/* ── Lista */}
@@ -353,7 +362,7 @@ export default function TransactionList() {
         </div>
       ) : (
         <div ref={listRef} className="space-y-2">
-          {sorted.map((tx) => {
+          {visible.map((tx) => {
             const isIncome   = tx.type === 'income'
             const isCommon   = tx.paidBy === 'common' || tx.paymentMode === 'common'
             const isExternal = tx.paymentMode === 'external'
@@ -436,10 +445,10 @@ export default function TransactionList() {
         </div>
       )}
 
-      {/* ── Cargar más (paginación incremental, no hay "páginas" con Firestore en tiempo real) */}
-      {transactions.length >= txLimit && (
+      {/* ── Cargar más: recorte puramente visual sobre datos ya cargados */}
+      {visibleCount < sorted.length && (
         <button
-          onClick={loadMoreTransactions}
+          onClick={() => setVisibleCount(v => v + VISIBLE_STEP)}
           className="w-full py-2.5 rounded-xl border border-dashed border-slate-700 text-slate-400
                      hover:border-blue-500/40 hover:text-blue-400 text-sm transition-all"
         >
