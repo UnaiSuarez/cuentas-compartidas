@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { SlidersHorizontal, Check, UserPlus, UserMinus, X } from 'lucide-react'
+import { SlidersHorizontal, Check, UserPlus, UserMinus, X, CalendarOff } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import { useCleaning } from '../../hooks/useCleaning'
 import { buildCalendarDays, todayStr } from '../../utils/calculateCleaningRotation'
@@ -156,23 +156,43 @@ export default function CleaningPage() {
         <p className="text-slate-400 text-xs uppercase tracking-wider mb-4">
           {isToday ? 'Hoy' : format(new Date(`${selectedDate}T00:00:00`), "d 'de' MMMM", { locale: es })}
         </p>
-        <div className="space-y-2">
-          {selectedDay?.slots.map(slot => (
-            <SlotCard
-              key={slot.slotId}
-              slot={slot}
-              members={groupMembers}
-              isAdmin={isAdmin}
-              myUid={userProfile?.id}
-              mode={cleaningSettings.mode}
-              onDone={handleDone}
-              onClaim={claimSlot}
-              onAssign={assignSlot}
-              onUnassign={unassignSlot}
-              submitting={submitting}
-            />
-          ))}
-        </div>
+        {selectedDay?.slots.length ? (
+          <div className="space-y-2">
+            {selectedDay.slots.map(slot => (
+              <SlotCard
+                key={slot.slotId}
+                slot={slot}
+                members={groupMembers}
+                isAdmin={isAdmin}
+                myUid={userProfile?.id}
+                mode={cleaningSettings.mode}
+                onDone={handleDone}
+                onClaim={claimSlot}
+                onAssign={assignSlot}
+                onUnassign={unassignSlot}
+                submitting={submitting}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center text-center py-6 text-slate-500">
+            <CalendarOff size={22} className="mb-2"/>
+            {!cleaningSettings.startDate ? (
+              <>
+                <p className="text-sm">Todavía no se ha configurado la limpieza del grupo.</p>
+                {isAdmin && (
+                  <button onClick={() => setShowSettings(true)}
+                    className="mt-3 text-xs bg-blue-600/20 text-blue-400 border border-blue-500/30
+                               px-3 py-1.5 rounded-lg hover:bg-blue-600/30 transition-all">
+                    Configurar ahora
+                  </button>
+                )}
+              </>
+            ) : (
+              <p className="text-sm">Este día no toca limpiar.</p>
+            )}
+          </div>
+        )}
       </div>
 
       <CleaningStats cleaningTasks={cleaningTasks} members={groupMembers}/>

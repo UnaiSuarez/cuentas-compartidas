@@ -2,10 +2,15 @@
  * Motor de rotación y estado de "Limpieza en casa".
  *
  * Modelo:
+ *   - El grupo elige qué días de la semana se limpia (`activeDays`, 1=lunes..7=domingo).
+ *     Sin días elegidos (grupo recién creado / nunca configurado) el calendario
+ *     no genera ninguna tarea — así empieza vacío en vez de rellenarse solo.
+ *   - `startDate` se fija automáticamente la primera vez que se guardan los
+ *     ajustes: la rotación cuenta ocurrencias de días activos desde ahí, nunca
+ *     desde antes de que el grupo lo configurara.
  *   - En modo 'auto' el asignado de un slot (día+zona) se calcula de forma
- *     determinista a partir de la fecha — NO requiere guardar nada en Firestore
- *     mientras esté pendiente. Cualquier miembro que abra la app ve siempre
- *     el mismo resultado para el mismo día.
+ *     determinista (rotación por nº de ocurrencia desde startDate) — NO
+ *     requiere guardar nada en Firestore mientras esté pendiente.
  *   - En modo 'manual' el asignado se guarda explícitamente (alguien se apunta
  *     o el admin asigna); sin asignación, el slot queda "sin asignar".
  *   - Solo se crea un documento en /cleaningTasks cuando el estado se aparta
@@ -17,9 +22,7 @@
  *   source ('auto'|'signup'|'admin'), doneBy?, doneAt?, createdAt
  */
 
-import { addDays, differenceInCalendarDays, format } from 'date-fns'
-
-const EPOCH = new Date(2024, 0, 1) // punto de referencia fijo para la rotación
+import { addDays, format } from 'date-fns'
 
 export function dateStr(d) {
   return format(d, 'yyyy-MM-dd')
@@ -49,6 +52,8 @@ export function defaultCleaningSettings() {
     granularity:   'day',    // 'day' (una persona para todo) | 'task' (una persona por tarea)
     zones:         defaultCleaningZones(),
     rotationOrder: [],       // uids; vacío = orden de groupMembers
+    activeDays:    [],       // 1=lunes..7=domingo; vacío = calendario sin configurar (vacío)
+    startDate:     null,     // 'YYYY-MM-DD'; se fija solo al guardar por primera vez
     penalty: {
       enabled:    true,
       fine:       false,
@@ -57,12 +62,45 @@ export function defaultCleaningSettings() {
   }
 }
 
-function daysSinceEpoch(dateKey) {
-  return differenceInCalendarDays(new Date(`${dateKey}T00:00:00`), EPOCH)
+/** Convierte Date → día ISO (1=lunes..7=domingo). */
+function isoWeekday(d) {
+  const day = d.getDay()
+  return day === 0 ? 7 : day
 }
 
-/** Slots de un día según la granularidad configurada. */
-export function slotsForSettings(settings) {
+export function isActiveDay(dateObj, activeDays) {
+  return (activeDays || []).includes(isoWeekday(dateObj))
+}
+
+/**
+ * Nº de ocurrencia (0-based) de `dateKey` entre los días activos desde `startDate`.
+ * null si el grupo no está configurado, la fecha es anterior al inicio, o ese
+ * día de la semana no está activo.
+ */
+export function occurrenceIndex(dateKey, settings) {
+  const { activeDays, startDate } = settings
+  if (!startDate || !activeDays?.length) return null
+
+  const target = new Date(`${dateKey}T00:00:00`)
+  const start  = new Date(`${startDate}T00:00:00`)
+  if (target < start) return null
+  if (!isActiveDay(target, activeDays)) return null
+
+  let count  = -1
+  let cursor = start
+  while (cursor <= target) {
+    if (isActiveDay(cursor, activeDays)) count++
+    cursor = addDays(cursor, 1)
+  }
+  return count
+}
+
+/** Slots de un día según la granularidad configurada; [] si ese día no toca limpiar. */
+export function slotsForDate(dateKey, settings) {
+  const dateObj = new Date(`${dateKey}T00:00:00`)
+  if (!settings.startDate || dateObj < new Date(`${settings.startDate}T00:00:00`)) return []
+  if (!isActiveDay(dateObj, settings.activeDays)) return []
+
   if (settings.granularity === 'task') {
     return (settings.zones || []).map(z => ({ slotId: z.id, zoneId: z.id, zoneLabel: z.label, zoneIcon: z.icon }))
   }
@@ -72,6 +110,9 @@ export function slotsForSettings(settings) {
 /** uid asignado por rotación determinista (modo automático, sin estado guardado). */
 export function autoAssignee(dateKey, slotId, members, settings) {
   if (!members.length) return null
+  const occ = occurrenceIndex(dateKey, settings)
+  if (occ === null) return null
+
   const order = (settings.rotationOrder?.length
     ? settings.rotationOrder.filter(uid => members.some(m => m.id === uid))
     : members.map(m => m.id))
@@ -81,8 +122,7 @@ export function autoAssignee(dateKey, slotId, members, settings) {
     ? Math.max((settings.zones || []).findIndex(z => z.id === slotId), 0)
     : 0
 
-  const raw = (daysSinceEpoch(dateKey) + zoneOffset) % order.length
-  const idx = raw < 0 ? raw + order.length : raw
+  const idx = (occ + zoneOffset) % order.length
   return order[idx]
 }
 
@@ -105,7 +145,7 @@ export function buildCalendarDays(settings, members, tasksByKey, centerDate, day
   for (let offset = -daysBefore; offset <= daysAfter; offset++) {
     const d   = addDays(centerDate, offset)
     const key = dateStr(d)
-    const slots = slotsForSettings(settings).map(slot => {
+    const slots = slotsForDate(key, settings).map(slot => {
       const taskKey    = taskKeyOf(key, slot.slotId)
       const task       = tasksByKey[taskKey] || null
       const assignedTo = resolveAssignee(task, key, slot.slotId, members, settings)

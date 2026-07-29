@@ -1,11 +1,18 @@
 import { useState, useMemo } from 'react'
 import { Plus, X, Save, ArrowUp, ArrowDown } from 'lucide-react'
 import { getAvatarByKey } from '../../assets/avatars'
+import { todayStr } from '../../utils/calculateCleaningRotation'
+
+const WEEKDAYS = [
+  { iso: 1, label: 'L' }, { iso: 2, label: 'M' }, { iso: 3, label: 'X' },
+  { iso: 4, label: 'J' }, { iso: 5, label: 'V' }, { iso: 6, label: 'S' }, { iso: 7, label: 'D' },
+]
 
 export default function CleaningSettingsPanel({ settings, members, onSave, onClose }) {
   const [mode,        setMode]        = useState(settings.mode)
   const [granularity, setGranularity] = useState(settings.granularity)
   const [zones,        setZones]        = useState(settings.zones.map(z => ({ ...z })))
+  const [activeDays,   setActiveDays]   = useState(settings.activeDays || [])
   const [rotationOrder, setRotationOrder] = useState(
     settings.rotationOrder?.length ? [...settings.rotationOrder] : members.map(m => m.id)
   )
@@ -13,6 +20,10 @@ export default function CleaningSettingsPanel({ settings, members, onSave, onClo
   const [penaltyFine,    setPenaltyFine]    = useState(settings.penalty?.fine ?? false)
   const [fineAmount,     setFineAmount]     = useState(settings.penalty?.fineAmount ?? 2)
   const [saving, setSaving] = useState(false)
+
+  function toggleDay(iso) {
+    setActiveDays(prev => prev.includes(iso) ? prev.filter(d => d !== iso) : [...prev, iso].sort())
+  }
 
   // Incluye a cualquier miembro nuevo que se haya unido mientras el orden guardado no lo contemplaba
   const displayOrder = useMemo(() => {
@@ -43,7 +54,10 @@ export default function CleaningSettingsPanel({ settings, members, onSave, onClo
     setSaving(true)
     try {
       await onSave({
-        mode, granularity, zones, rotationOrder: displayOrder,
+        mode, granularity, zones, rotationOrder: displayOrder, activeDays,
+        // La rotación empieza a contar desde que se configura por primera vez,
+        // nunca desde antes — así el calendario no aparece ya relleno.
+        startDate: settings.startDate || todayStr(),
         penalty: { enabled: penaltyEnabled, fine: penaltyFine, fineAmount: Number(fineAmount) || 0 },
       })
       onClose()
@@ -71,6 +85,25 @@ export default function CleaningSettingsPanel({ settings, members, onSave, onClo
             Manual (apuntarse / asignar)
           </button>
         </div>
+      </div>
+
+      {/* Días activos / frecuencia semanal */}
+      <div>
+        <label className="text-xs text-slate-400 mb-1.5 block">
+          ¿Qué días se limpia? ({activeDays.length} {activeDays.length === 1 ? 'vez' : 'veces'} por semana)
+        </label>
+        <div className="flex gap-1.5">
+          {WEEKDAYS.map(({ iso, label }) => (
+            <button key={iso} onClick={() => toggleDay(iso)}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all
+                         ${activeDays.includes(iso) ? 'bg-blue-600/30 text-blue-300 border border-blue-500/50' : 'bg-slate-800/60 text-slate-400 border border-slate-700/40'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {activeDays.length === 0 && (
+          <p className="text-xs text-slate-500 mt-1.5">Sin días marcados, el calendario no genera ninguna tarea.</p>
+        )}
       </div>
 
       {/* Granularidad */}
