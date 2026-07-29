@@ -129,6 +129,7 @@ export function autoAssignee(dateKey, slotId, members, settings) {
 
 /** Asignado efectivo de un slot: doc guardado (si existe) o rotación automática. */
 export function resolveAssignee(task, dateKey, slotId, members, settings) {
+  if (task?.assignmentCleared) return null
   if (settings.mode === 'manual') return task?.assignedTo ?? null
   return task?.assignedTo ?? autoAssignee(dateKey, slotId, members, settings)
 }
@@ -153,7 +154,7 @@ export function buildCalendarDays(settings, members, tasksByKey, centerDate, day
       return { ...slot, taskKey, date: key, assignedTo, status: resolveStatus(task), task }
     })
     const historicalSlots = Object.values(tasksByKey)
-      .filter(task => task.date === key && task.source === 'historical' && !regularSlots.some(slot => slot.slotId === task.slotId))
+      .filter(task => task.date === key && !regularSlots.some(slot => slot.slotId === task.slotId))
       .map(task => {
         const zone = settings.zones?.find(item => item.id === task.slotId)
         return {

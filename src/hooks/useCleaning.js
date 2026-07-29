@@ -13,7 +13,7 @@ import {
   collection, addDoc, serverTimestamp,
   runTransaction, writeBatch,
 } from 'firebase/firestore'
-import { addDays } from 'date-fns'
+import { addDays, getISODay } from 'date-fns'
 import { db } from '../config/firebase'
 import { useApp } from '../context/AppContext'
 import { useChat } from './useChat'
@@ -136,6 +136,7 @@ export function useCleaning() {
         assignedTo: userProfile.id,
         status: 'pending',
         source: 'signup',
+        assignmentCleared: deleteField(),
         createdAt: serverTimestamp(),
       }, { merge: true })
       await recordActivity({
@@ -154,9 +155,10 @@ export function useCleaning() {
   async function claimRecurring(slot, startDate, endDate) {
     if (!groupId || !userProfile || !startDate || !endDate || startDate > endDate) return
     const days = []
+    const selectedWeekday = getISODay(new Date(`${slot.date}T00:00:00`))
     for (let date = new Date(`${startDate}T00:00:00`); date <= new Date(`${endDate}T00:00:00`); date = addDays(date, 1)) {
       const dateKey = dateStr(date)
-      if (slotsForDate(dateKey, cleaningSettings).some(candidate => candidate.slotId === slot.slotId)) days.push(dateKey)
+      if (getISODay(date) === selectedWeekday && slotsForDate(dateKey, cleaningSettings).some(candidate => candidate.slotId === slot.slotId)) days.push(dateKey)
     }
     if (!days.length) throw new Error('No hay días de limpieza configurados en ese intervalo para esta tarea.')
     if (days.length > 180) throw new Error('El intervalo es demasiado largo. Elige un máximo de 180 días de limpieza.')
@@ -174,7 +176,7 @@ export function useCleaning() {
         const taskKey = taskKeyOf(date, slot.slotId)
         batch.set(taskRef(taskKey), {
           date, slotId: slot.slotId, zoneId: slot.zoneId, zoneLabel: slot.zoneLabel,
-          assignedTo: userProfile.id, status: 'pending', source: 'recurring', createdAt: serverTimestamp(),
+          assignedTo: userProfile.id, status: 'pending', source: 'recurring', assignmentCleared: deleteField(), createdAt: serverTimestamp(),
         }, { merge: true })
         batch.set(doc(collection(db, 'groups', groupId, 'cleaningActivity')), {
           taskKey, date, zoneLabel: slot.zoneLabel, zoneId: slot.zoneId,
@@ -209,7 +211,8 @@ export function useCleaning() {
         date: slot.date, slotId: slot.slotId, zoneId: slot.zoneId, zoneLabel: slot.zoneLabel,
         assignedTo: targetUid,
         status: existing?.status || 'pending',
-        source: 'admin',
+        source: existing?.source || 'admin',
+        assignmentCleared: deleteField(),
         ...(existing ? {} : { createdAt: serverTimestamp() }),
       }, { merge: true })
       if (existing?.status === 'missed' && existing.fineId) {
@@ -238,16 +241,32 @@ export function useCleaning() {
     }
   }
 
-  /** Quita la asignación de un slot pendiente (cancelar apunte / admin desasigna). */
+  /** Quita una asignación y devuelve la tarea a pendiente, incluso para fechas pasadas. */
   async function unassignSlot(slot) {
-    if (!groupId || !slot.task) return
+    if (!groupId) return
     setSubmitting(true)
     setError(null)
     try {
-      await updateDoc(taskRef(slot.taskKey), {
-        assignedTo: deleteField(),
-        source: deleteField(),
-      })
+      const reset = {
+        assignedTo: deleteField(), assignmentCleared: true, status: 'pending',
+        doneBy: deleteField(), doneAt: deleteField(), missedAt: deleteField(),
+      }
+      if (slot.task) {
+        await updateDoc(taskRef(slot.taskKey), reset)
+      } else {
+        await setDoc(taskRef(slot.taskKey), {
+          date: slot.date, slotId: slot.slotId, zoneId: slot.zoneId, zoneLabel: slot.zoneLabel,
+          source: 'admin', createdAt: serverTimestamp(), status: 'pending', assignmentCleared: true,
+        })
+      }
+      if (slot.task?.fineId) {
+        await updateDoc(doc(db, 'groups', groupId, 'fines', slot.task.fineId), {
+          status: 'reversed',
+          reversedAt: serverTimestamp(),
+          reversedBy: userProfile?.id || null,
+          reversedByName: userProfile?.name || 'Alguien',
+        })
+      }
       await recordActivity({
         ...activityBase(slot), type: 'unassigned', actorId: userProfile?.id || null,
         actorName: userProfile?.name || 'Alguien', previousAssignedTo: slot.assignedTo,
