@@ -1,73 +1,90 @@
 import { useState, useMemo } from 'react'
-import { startOfWeek, addWeeks, isToday, format } from 'date-fns'
+import {
+  startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths,
+  isToday, isSameMonth, differenceInCalendarDays, format,
+} from 'date-fns'
 import { es } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Check, X as XIcon } from 'lucide-react'
 import { buildCalendarDays } from '../../utils/calculateCleaningRotation'
-import { getAvatarByKey } from '../../assets/avatars'
 
-const STATUS_DOT = {
-  done:    'bg-emerald-500',
-  missed:  'bg-red-500',
-  pending: 'bg-slate-600',
-}
+const WEEKDAY_LABELS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
 
 export default function CleaningCalendar({ settings, members, tasksByKey, selectedDate, onSelectDate }) {
-  const [weekOffset, setWeekOffset] = useState(0)
+  const [monthOffset, setMonthOffset] = useState(0)
 
-  const weekStart = useMemo(
-    () => addWeeks(startOfWeek(new Date(), { weekStartsOn: 1, locale: es }), weekOffset),
-    [weekOffset]
+  const monthDate = useMemo(() => addMonths(new Date(), monthOffset), [monthOffset])
+  const gridStart = useMemo(
+    () => startOfWeek(startOfMonth(monthDate), { weekStartsOn: 1, locale: es }),
+    [monthDate]
   )
+  const gridEnd = useMemo(
+    () => endOfWeek(endOfMonth(monthDate), { weekStartsOn: 1, locale: es }),
+    [monthDate]
+  )
+  const totalDays = differenceInCalendarDays(gridEnd, gridStart) + 1
 
   const days = useMemo(
-    () => buildCalendarDays(settings, members, tasksByKey, weekStart, 0, 6),
-    [settings, members, tasksByKey, weekStart]
+    () => buildCalendarDays(settings, members, tasksByKey, gridStart, 0, totalDays - 1),
+    [settings, members, tasksByKey, gridStart, totalDays]
   )
 
   return (
     <div className="glass rounded-2xl p-4">
       <div className="flex items-center justify-between mb-3">
-        <button onClick={() => setWeekOffset(w => w - 1)}
+        <button onClick={() => setMonthOffset(o => o - 1)}
           className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/60 transition-all">
           <ChevronLeft size={16}/>
         </button>
-        <p className="text-sm text-slate-300 font-medium">
-          {format(weekStart, "'Semana del' d MMM", { locale: es })}
+        <p className="text-sm text-slate-300 font-medium capitalize">
+          {format(monthDate, 'MMMM yyyy', { locale: es })}
         </p>
-        <button onClick={() => setWeekOffset(w => w + 1)}
+        <button onClick={() => setMonthOffset(o => o + 1)}
           className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/60 transition-all">
           <ChevronRight size={16}/>
         </button>
       </div>
 
-      <div className="grid grid-cols-7 gap-1.5">
+      <div className="grid grid-cols-7 gap-1 mb-1">
+        {WEEKDAY_LABELS.map(d => (
+          <div key={d} className="text-center text-[10px] text-slate-500 uppercase">{d}</div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-7 gap-1">
         {days.map(day => {
+          const inMonth    = isSameMonth(day.dateObj, monthDate)
           const isSelected = selectedDate === day.date
-          const todayCol    = isToday(day.dateObj)
+          const todayCell  = isToday(day.dateObj)
           return (
             <button
               key={day.date}
               onClick={() => onSelectDate(day.date)}
-              className={`flex flex-col items-center gap-1 py-2 rounded-xl transition-all
+              className={`flex flex-col items-start gap-0.5 p-1 rounded-lg min-h-[56px] text-left transition-all
+                         ${!inMonth ? 'opacity-30' : ''}
                          ${isSelected ? 'bg-blue-600/20 border border-blue-500/40'
-                           : todayCol ? 'bg-slate-800/70 border border-slate-700/60'
+                           : todayCell ? 'bg-slate-800/70 border border-slate-700/60'
                            : 'bg-slate-800/30 border border-transparent hover:bg-slate-800/60'}`}
             >
-              <span className="text-[10px] uppercase text-slate-500">{format(day.dateObj, 'EEE', { locale: es })}</span>
-              <span className={`text-sm font-semibold ${todayCol ? 'text-blue-400' : 'text-white'}`}>
+              <span className={`text-xs font-semibold ${todayCell ? 'text-blue-400' : 'text-white'}`}>
                 {format(day.dateObj, 'd')}
               </span>
-              <div className="flex flex-wrap justify-center gap-0.5 mt-0.5 max-w-full">
+              <div className="flex flex-col gap-0.5 w-full">
                 {day.slots.map(slot => {
                   const member = members.find(m => m.id === slot.assignedTo)
-                  const Av = member ? getAvatarByKey(member.avatar) : null
-                  return Av ? (
-                    <div key={slot.slotId} className="relative w-4 h-4 shrink-0">
-                      <Av state="normal" color={member.color || '#2563eb'} size={16}/>
-                      <span className={`absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full ${STATUS_DOT[slot.status]}`}/>
+                  const nameColor = slot.status === 'missed' ? 'text-red-400'
+                    : slot.status === 'done' ? 'text-emerald-400' : 'text-slate-400'
+                  return (
+                    <div key={slot.slotId} className="flex items-center gap-0.5 w-full leading-tight">
+                      {slot.status === 'done'   && <Check size={9} className="text-emerald-400 shrink-0"/>}
+                      {slot.status === 'missed' && <XIcon size={9} className="text-red-400 shrink-0"/>}
+                      {slot.status === 'pending' && (
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0"
+                          style={{ backgroundColor: member?.color || '#475569' }}/>
+                      )}
+                      <span className={`text-[9px] truncate ${nameColor}`}>
+                        {member?.name?.split(' ')[0] || (slot.assignedTo ? '?' : '—')}
+                      </span>
                     </div>
-                  ) : (
-                    <span key={slot.slotId} className={`w-2 h-2 rounded-full ${STATUS_DOT[slot.status]}`}/>
                   )
                 })}
               </div>
